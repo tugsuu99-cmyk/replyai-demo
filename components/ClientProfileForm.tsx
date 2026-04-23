@@ -59,14 +59,14 @@ export function ClientProfileForm({ initialClient, onCancel, onSave }: ClientPro
   }
 
   const fieldPlaceholders: Partial<Record<keyof ClientProfile, string>> = {
-    clientName: "APF",
-    storeName: "Al Piemonte Ford",
-    website: "https://www.apford.com/",
-    phone: "(708) 345-9300",
-    address: "2500 W North Ave, Melrose Park, IL 60160",
-    senderName: "Alex from Al Piemonte Ford",
-    senderTitle: "BDC Manager",
-    footerText: "You are receiving this because you previously worked with our dealership."
+    clientName: "Client name",
+    storeName: "Store name",
+    website: "Client website",
+    phone: "Client phone",
+    address: "Client address",
+    senderName: "Sender name",
+    senderTitle: "Sender title",
+    footerText: "Footer text"
   };
 
   return (
@@ -177,7 +177,7 @@ export function ClientProfileForm({ initialClient, onCancel, onSave }: ClientPro
             <input
               className="rounded-lg border border-slate-700 bg-slate-950 px-3 py-1.5 text-sm text-slate-100 outline-none transition focus:border-teal-400 focus:ring-2 focus:ring-teal-400/20"
               value={client.ctaUrls.default}
-              placeholder="https://www.exampledealer.com/"
+              placeholder="Default CTA URL"
               onChange={(event) => updateCtaUrl("default", event.target.value)}
             />
           </label>
@@ -187,7 +187,7 @@ export function ClientProfileForm({ initialClient, onCancel, onSave }: ClientPro
               <input
                 className="rounded-lg border border-slate-700 bg-slate-950 px-3 py-1.5 text-sm text-slate-100 outline-none transition focus:border-teal-400 focus:ring-2 focus:ring-teal-400/20"
                 value={client.ctaUrls[emailType]}
-                placeholder={`https://www.exampledealer.com/${emailType}`}
+                placeholder={`${emailType[0].toUpperCase()}${emailType.slice(1)} CTA URL`}
                 onChange={(event) => updateCtaUrl(emailType, event.target.value)}
               />
             </label>
