@@ -5,6 +5,8 @@ export type FieldKey =
   | "firstName"
   | "lastName"
   | "email"
+  | "prospectDate"
+  | "soldDate"
   | "year"
   | "make"
   | "model"
@@ -15,6 +17,9 @@ export type FieldKey =
 
 export type ColumnMapping = Partial<Record<FieldKey, string>>;
 export type CustomerContextFields = Record<string, string>;
+export type AudienceFilterType = "standard" | "prospect" | "soldList" | "maintenance";
+export type DateFilterField = "prospectDate" | "soldDate" | "lastServiceDate";
+export const LAST_SERVICE_DAY_OPTIONS = Array.from({ length: 40 }, (_, index) => (index + 1) * 10);
 
 export type NormalizedCustomer = {
   id: string;
@@ -22,6 +27,8 @@ export type NormalizedCustomer = {
   firstName: string;
   lastName?: string;
   email: string;
+  prospectDate?: string;
+  soldDate?: string;
   year?: number;
   make?: string;
   model?: string;
@@ -44,6 +51,8 @@ export const FIELD_LABELS: Record<FieldKey, string> = {
   firstName: "First name",
   lastName: "Last name",
   email: "Email",
+  prospectDate: "Prospect date",
+  soldDate: "Sold date",
   year: "Year",
   make: "Make",
   model: "Model",
@@ -56,6 +65,7 @@ export const FIELD_LABELS: Record<FieldKey, string> = {
 export const REQUIRED_FIELDS = new Set<FieldKey>(["firstName", "email"]);
 
 export const FIELD_KEYS = Object.keys(FIELD_LABELS) as FieldKey[];
+export const FILTERABLE_DATE_FIELDS: DateFilterField[] = ["prospectDate", "soldDate"];
 
 const FIELD_SYNONYMS: Record<FieldKey, string[]> = {
   firstName: [
@@ -78,6 +88,23 @@ const FIELD_SYNONYMS: Record<FieldKey, string[]> = {
     "family name"
   ],
   email: ["email", "email address", "emailaddress", "email_address", "customer email", "e-mail"],
+  prospectDate: [
+    "prospect date",
+    "prospect_date",
+    "lead date",
+    "lead created",
+    "lead created date",
+    "inquiry date",
+    "prospect created"
+  ],
+  soldDate: [
+    "sold date",
+    "sold_date",
+    "sale date",
+    "delivery date",
+    "deal date",
+    "date sold"
+  ],
   year: ["year", "vehicle year", "vehicleyear", "model year", "modelyear", "veh year"],
   make: ["make", "vehicle make", "vehiclemake", "veh make"],
   model: ["model", "vehicle model", "vehiclemodel", "veh model"],
@@ -242,6 +269,8 @@ export function normalizeCustomer(
     firstName,
     lastName,
     email: normalizeEmail(mappedValue(row, mapping, "email")),
+    prospectDate: normalizeDate(mappedValue(row, mapping, "prospectDate")),
+    soldDate: normalizeDate(mappedValue(row, mapping, "soldDate")),
     year: normalizeInteger(mappedValue(row, mapping, "year")),
     make: normalizeText(mappedValue(row, mapping, "make")),
     model: normalizeText(mappedValue(row, mapping, "model")),
@@ -260,4 +289,128 @@ export function normalizeCustomer(
 
 export function normalizeCustomers(rows: CsvRow[], mapping: ColumnMapping, includedHeaders: string[] = []) {
   return rows.map((row, index) => normalizeCustomer(row, mapping, index, includedHeaders));
+}
+
+function parseSafeDate(value?: string) {
+  if (!value) {
+    return undefined;
+  }
+
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? undefined : date;
+}
+
+function startOfDay(date: Date) {
+  const copy = new Date(date);
+  copy.setHours(0, 0, 0, 0);
+  return copy;
+}
+
+function endOfDay(date: Date) {
+  const copy = new Date(date);
+  copy.setHours(23, 59, 59, 999);
+  return copy;
+}
+
+function subtractDays(date: Date, days: number) {
+  const copy = new Date(date);
+  copy.setDate(copy.getDate() - days);
+  return copy;
+}
+
+function parseYear(value?: string) {
+  if (!value) {
+    return undefined;
+  }
+
+  const cleaned = value.trim();
+  return /^\d{4}$/.test(cleaned) ? Number(cleaned) : undefined;
+}
+
+function isWithinDateRange(value: string | undefined, startDate?: string, endDate?: string) {
+  const startYear = parseYear(startDate);
+  const endYear = parseYear(endDate);
+
+  if (typeof startYear === "number" || typeof endYear === "number") {
+    const date = parseSafeDate(value);
+
+    if (!date) {
+      return false;
+    }
+
+    const valueYear = date.getFullYear();
+
+    if (typeof startYear === "number" && valueYear < startYear) {
+      return false;
+    }
+
+    if (typeof endYear === "number" && valueYear > endYear) {
+      return false;
+    }
+
+    return true;
+  }
+
+  const date = parseSafeDate(value);
+
+  if (!date) {
+    return false;
+  }
+
+  const rangeStart = parseSafeDate(startDate);
+  const rangeEnd = parseSafeDate(endDate);
+
+  if (rangeStart && date < startOfDay(rangeStart)) {
+    return false;
+  }
+
+  if (rangeEnd && date > endOfDay(rangeEnd)) {
+    return false;
+  }
+
+  return true;
+}
+
+export function filterCustomersForAudience(
+  customers: NormalizedCustomer[],
+  audienceType: AudienceFilterType,
+  startDate?: string,
+  endDate?: string
+) {
+  // Prospect and sold-list date windows are campaign metadata for now because
+  // the uploaded CSV does not yet have standardized prospect/sold date fields.
+  // Maintenance can be filtered safely from the normalized lastServiceDate.
+  if (audienceType !== "maintenance") {
+    return customers;
+  }
+
+  if (!startDate && !endDate) {
+    return customers;
+  }
+
+  return customers.filter((customer) => isWithinDateRange(customer.lastServiceDate, startDate, endDate));
+}
+
+export function filterCustomersByDateField(
+  customers: NormalizedCustomer[],
+  field: DateFilterField | "",
+  startDate?: string,
+  endDate?: string,
+  lastServiceDays?: number
+) {
+  if (!field || (!startDate && !endDate)) {
+    if (!(field === "lastServiceDate" && typeof lastServiceDays === "number")) {
+      return customers;
+    }
+  }
+
+  if (field === "lastServiceDate" && typeof lastServiceDays === "number") {
+    const thresholdDate = startOfDay(subtractDays(new Date(), lastServiceDays));
+    return customers.filter((customer) => {
+      const serviceDate = parseSafeDate(customer.lastServiceDate);
+      return Boolean(serviceDate && serviceDate <= thresholdDate);
+    });
+  }
+
+  return customers.filter((customer) => isWithinDateRange(customer[field], startDate, endDate));
 }

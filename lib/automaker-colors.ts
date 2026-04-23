@@ -30,7 +30,7 @@ export const automakerPalettes: AutomakerPalette[] = [
   { brand: "Mercedes-Benz", primaryColor: "#111827", secondaryColor: "#f8fafc", accentColor: "#9ca3af" },
   { brand: "MINI", primaryColor: "#111827", secondaryColor: "#ffffff", accentColor: "#16a34a" },
   { brand: "Mitsubishi", primaryColor: "#ed0000", secondaryColor: "#111827", accentColor: "#ffffff" },
-  { brand: "Nissan", primaryColor: "#c3002f", secondaryColor: "#111827", accentColor: "#f8fafc" },
+  { brand: "Nissan", primaryColor: "#c3002f", secondaryColor: "#000000", accentColor: "#f8fafc" },
   { brand: "Porsche", primaryColor: "#111827", secondaryColor: "#f8fafc", accentColor: "#d4af37" },
   { brand: "Ram", primaryColor: "#111827", secondaryColor: "#f8fafc", accentColor: "#a3a3a3" },
   { brand: "Subaru", primaryColor: "#003399", secondaryColor: "#f8fafc", accentColor: "#facc15" },

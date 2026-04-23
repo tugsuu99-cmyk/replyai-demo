@@ -2,7 +2,12 @@
 
 import Link from "next/link";
 import { useMemo, useState } from "react";
+import { clientProfileToBrandConfig, loadClientProfiles, type ClientProfile } from "@/lib/client-config";
+import { defaultBrandConfig } from "@/lib/brand-config";
+import { renderBrandedEmailHtml } from "@/lib/email-template";
+import type { NormalizedCustomer } from "@/lib/normalize";
 import {
+  CAMPAIGN_AUDIENCE_LABELS,
   deleteCampaignReport,
   formatCampaignName,
   loadCampaignReports,
@@ -20,8 +25,21 @@ function formatDate(value: string) {
   }).format(new Date(value));
 }
 
+function formatCampaignWindow(startDate?: string, endDate?: string) {
+  if (!startDate && !endDate) {
+    return null;
+  }
+
+  if (startDate && endDate) {
+    return `${startDate} to ${endDate}`;
+  }
+
+  return startDate || endDate || null;
+}
+
 export default function DashboardPage() {
   const [reports, setReports] = useState<CampaignReport[]>(() => loadCampaignReports());
+  const [clientProfiles] = useState<ClientProfile[]>(() => loadClientProfiles());
   const [selectedCampaignId, setSelectedCampaignId] = useState<string>();
   const [selectedEmailId, setSelectedEmailId] = useState<string>();
 
@@ -34,10 +52,47 @@ export default function DashboardPage() {
       { campaigns: 0, emails: 0 }
     );
   }, [reports]);
+  const clientProfilesById = useMemo(
+    () => Object.fromEntries(clientProfiles.map((profile) => [profile.clientId, profile])),
+    [clientProfiles]
+  );
 
   const selectedCampaign = reports.find((report) => report.campaignId === selectedCampaignId);
   const selectedEmail =
     selectedCampaign?.emails.find((email) => email.customerId === selectedEmailId) ?? selectedCampaign?.emails[0];
+  const selectedEmailBrandConfig =
+    selectedCampaign && selectedEmail
+      ? selectedCampaign.brandSnapshot
+        ? clientProfileToBrandConfig(
+            {
+              clientId: selectedCampaign.clientId,
+              clientName: selectedCampaign.clientName,
+              automakerBrand: "",
+              ...selectedCampaign.brandSnapshot
+            },
+            selectedEmail.emailType
+          )
+        : clientProfilesById[selectedCampaign.clientId]
+          ? clientProfileToBrandConfig(clientProfilesById[selectedCampaign.clientId], selectedEmail.emailType)
+          : defaultBrandConfig
+      : null;
+  const selectedEmailHtml =
+    selectedCampaign && selectedEmail && selectedEmailBrandConfig
+      ? renderBrandedEmailHtml(
+          {
+            id: selectedEmail.customerId,
+            firstName: selectedEmail.firstName,
+            lastName: selectedEmail.lastName,
+            email: "",
+            emailType: selectedEmail.emailType,
+            subject: selectedEmail.subject,
+            headline: selectedEmail.headline,
+            emailBody: selectedEmail.emailBody,
+            ctaLine: selectedEmail.ctaLine
+          } satisfies NormalizedCustomer,
+          selectedEmailBrandConfig
+        )
+      : null;
 
   function handleViewCampaign(report: CampaignReport) {
     setSelectedCampaignId(report.campaignId);
@@ -56,7 +111,7 @@ export default function DashboardPage() {
   }
 
   return (
-    <main className="min-h-screen bg-[radial-gradient(circle_at_top,#111827_0,#020617_38%,#020617_100%)] px-4 py-6 text-slate-100 sm:px-6 lg:px-8">
+    <main className="min-h-screen bg-[linear-gradient(180deg,#111111_0%,#151515_100%)] px-4 py-6 text-slate-100 sm:px-6 lg:px-8">
       <div className="mx-auto grid max-w-7xl gap-5">
         <header className="flex flex-col gap-4 rounded-2xl border border-slate-800 bg-slate-950 p-5 shadow-xl shadow-black/20 sm:flex-row sm:items-center sm:justify-between">
           <div>
@@ -66,7 +121,7 @@ export default function DashboardPage() {
             </p>
           </div>
           <Link
-            className="rounded-xl bg-slate-100 px-4 py-2 text-sm font-semibold text-slate-950 transition hover:bg-white"
+            className="rounded-xl border border-accent bg-accent px-4 py-2 text-sm font-semibold text-slate-950 transition hover:border-[#e3b400] hover:bg-[#e3b400]"
             href="/upload"
           >
             Back to Studio
@@ -76,11 +131,17 @@ export default function DashboardPage() {
         <section className="grid gap-4 sm:grid-cols-2">
           <div className="rounded-2xl border border-slate-800 bg-slate-950 p-5 shadow-lg shadow-black/20">
             <p className="text-sm text-slate-400">Total campaigns</p>
-            <p className="mt-2 text-3xl font-semibold text-slate-50">{totals.campaigns}</p>
+            <div className="mt-3 flex items-end justify-between gap-3">
+              <p className="text-3xl font-semibold text-slate-50">{totals.campaigns}</p>
+              <div className="h-9 w-1 rounded-full bg-accent" />
+            </div>
           </div>
           <div className="rounded-2xl border border-slate-800 bg-slate-950 p-5 shadow-lg shadow-black/20">
             <p className="text-sm text-slate-400">Total emails generated</p>
-            <p className="mt-2 text-3xl font-semibold text-slate-50">{totals.emails}</p>
+            <div className="mt-3 flex items-end justify-between gap-3">
+              <p className="text-3xl font-semibold text-slate-50">{totals.emails}</p>
+              <div className="h-9 w-1 rounded-full bg-accent" />
+            </div>
           </div>
         </section>
 
@@ -133,7 +194,12 @@ export default function DashboardPage() {
                         <div className="flex items-center gap-2">
                           <button
                             type="button"
-                            className="rounded-md border border-slate-700 px-3 py-1.5 text-xs font-semibold text-slate-200 transition hover:border-teal-400 hover:text-teal-300 disabled:cursor-not-allowed disabled:opacity-40"
+                            className="rounded-md px-3 py-1.5 text-xs font-semibold transition disabled:cursor-not-allowed disabled:opacity-40"
+                            style={{
+                              border: "1px solid rgba(255, 203, 5, 0.45)",
+                              background: "rgba(255, 203, 5, 0.08)",
+                              color: "#ffcb05"
+                            }}
                             disabled={report.emails.length === 0}
                             onClick={() => handleViewCampaign(report)}
                           >
@@ -163,13 +229,23 @@ export default function DashboardPage() {
                 <div>
                   <h3 className="text-sm font-semibold text-slate-100">{selectedCampaign.campaignName}</h3>
                   <p className="text-xs text-slate-400">
-                    {selectedCampaign.clientName} • {selectedCampaign.totalEmails} generated email
+                    {selectedCampaign.clientName} • {CAMPAIGN_AUDIENCE_LABELS[selectedCampaign.audienceType]} • {selectedCampaign.totalEmails} generated email
                     {selectedCampaign.totalEmails === 1 ? "" : "s"}
                   </p>
+                  {formatCampaignWindow(selectedCampaign.audienceStartDate, selectedCampaign.audienceEndDate) ? (
+                    <p className="mt-1 text-xs text-slate-500">
+                      {formatCampaignWindow(selectedCampaign.audienceStartDate, selectedCampaign.audienceEndDate)}
+                    </p>
+                  ) : null}
                 </div>
                 <button
                   type="button"
-                  className="rounded-md border border-slate-700 px-3 py-1.5 text-xs font-semibold text-slate-200 transition hover:border-teal-400 hover:text-teal-300"
+                  className="rounded-md px-3 py-1.5 text-xs font-semibold transition"
+                  style={{
+                    border: "1px solid rgba(255, 203, 5, 0.45)",
+                    background: "rgba(255, 203, 5, 0.08)",
+                    color: "#ffcb05"
+                  }}
                   onClick={() => {
                     setSelectedCampaignId(undefined);
                     setSelectedEmailId(undefined);
@@ -197,8 +273,8 @@ export default function DashboardPage() {
                             type="button"
                             className={`rounded-xl border px-3 py-3 text-left transition ${
                               isSelected
-                                ? "border-teal-400 bg-teal-400/10"
-                                : "border-slate-800 bg-slate-950 hover:border-slate-700"
+                                ? "border-accent bg-slate-900 shadow-[0_0_0_1px_rgba(255,203,5,0.12)]"
+                                : "border-slate-800 bg-slate-950 hover:border-slate-600"
                             }`}
                             onClick={() => setSelectedEmailId(email.customerId)}
                           >
@@ -223,7 +299,23 @@ export default function DashboardPage() {
                       <iframe
                         title={`Saved campaign preview for ${selectedEmail.firstName || "customer"}`}
                         className="h-full min-h-[560px] w-full rounded-xl border border-slate-800 bg-white"
-                        srcDoc={selectedEmail.htmlEmail}
+                        srcDoc={
+                          selectedEmailHtml ??
+                          renderBrandedEmailHtml(
+                            {
+                              id: selectedEmail.customerId,
+                              firstName: selectedEmail.firstName,
+                              lastName: selectedEmail.lastName,
+                              email: "",
+                              emailType: selectedEmail.emailType,
+                              subject: selectedEmail.subject,
+                              headline: selectedEmail.headline,
+                              emailBody: selectedEmail.emailBody,
+                              ctaLine: selectedEmail.ctaLine
+                            } satisfies NormalizedCustomer,
+                            selectedEmailBrandConfig ?? defaultBrandConfig
+                          )
+                        }
                       />
                     </>
                   ) : (

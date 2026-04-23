@@ -19,6 +19,7 @@ import {
   type ClientProfile
 } from "@/lib/client-config";
 import { parseCsv, type ParsedCsv } from "@/lib/csv";
+import { getHeroGradient, toTitleCase } from "@/lib/email-components";
 import { downloadCsv } from "@/lib/export";
 import {
   loadHeroOverrides,
@@ -27,6 +28,7 @@ import {
   type HeroOverrides
 } from "@/lib/hero-library";
 import {
+  filterCustomersByDateField,
   inferColumnMapping,
   normalizeCustomers,
   type ColumnMapping,
@@ -35,6 +37,7 @@ import {
 import { addCampaignReport, buildCampaignReport } from "@/lib/reporting";
 import { EMAIL_TYPES, emailTypeLabel, type EmailType } from "@/lib/rules";
 import { exportSendPulseCsv } from "@/lib/sendpulse";
+import { emailTypeTemplateConfig } from "@/lib/template-config";
 
 type FlowStep = "upload" | "mapping" | "leads" | "preview";
 
@@ -60,6 +63,35 @@ function readAsDataUrl(file: File) {
     reader.addEventListener("error", () => reject(new Error("Could not read file.")));
     reader.readAsDataURL(file);
   });
+}
+
+function extractMappedYears(parsed: ParsedCsv, mapping: ColumnMapping, field: keyof ColumnMapping) {
+  const header = mapping[field];
+
+  if (!header) {
+    return [];
+  }
+
+  return Array.from(
+    new Set(
+      parsed.rows
+        .map((row) => row[header]?.trim())
+        .flatMap((value) => {
+          if (!value) {
+            return [];
+          }
+
+          const directYear = value.match(/\b(19|20)\d{2}\b/);
+
+          if (directYear) {
+            return [directYear[0]];
+          }
+
+          const parsedDate = new Date(value);
+          return Number.isNaN(parsedDate.getTime()) ? [] : [String(parsedDate.getFullYear())];
+        })
+    )
+  ).sort((a, b) => Number(a) - Number(b));
 }
 
 function AppLogo() {
@@ -172,6 +204,11 @@ export default function UploadPage() {
   const [mapping, setMapping] = useState<ColumnMapping>({});
   const [includedHeaders, setIncludedHeaders] = useState<string[]>([]);
   const [campaignName, setCampaignName] = useState("");
+  const [prospectDateStart, setProspectDateStart] = useState("");
+  const [prospectDateEnd, setProspectDateEnd] = useState("");
+  const [soldDateStart, setSoldDateStart] = useState("");
+  const [soldDateEnd, setSoldDateEnd] = useState("");
+  const [lastServiceDays, setLastServiceDays] = useState<number | "">("");
   const [cleanedCustomers, setCleanedCustomers] = useState<NormalizedCustomer[]>([]);
   const [selectedCustomerId, setSelectedCustomerId] = useState<string>();
   const [isGenerating, setIsGenerating] = useState(false);
@@ -220,6 +257,16 @@ export default function UploadPage() {
   const generatedCount = cleanedCustomers.filter((customer) => customer.subject && customer.emailBody).length;
   const hasCsv = parsed.headers.length > 0;
   const hasCleanData = cleanedCustomers.length > 0;
+  const trimmedCampaignName = campaignName.trim();
+  const hasCampaignName = trimmedCampaignName.length > 0;
+  const prospectYearOptions = useMemo(
+    () => extractMappedYears(parsed, mapping, "prospectDate"),
+    [parsed, mapping]
+  );
+  const soldYearOptions = useMemo(
+    () => extractMappedYears(parsed, mapping, "soldDate"),
+    [parsed, mapping]
+  );
 
   async function handleCsvFile(file: File) {
     const text = await file.text();
@@ -229,7 +276,11 @@ export default function UploadPage() {
     setParsed(nextParsed);
     setMapping(inferColumnMapping(nextParsed.headers));
     setIncludedHeaders([]);
-    setCampaignName("");
+    setProspectDateStart("");
+    setProspectDateEnd("");
+    setSoldDateStart("");
+    setSoldDateEnd("");
+    setLastServiceDays("");
     setCleanedCustomers([]);
     setSelectedCustomerId(undefined);
     setGenerationErrors([]);
@@ -238,9 +289,33 @@ export default function UploadPage() {
   }
 
   function buildCleanedPreview() {
+    if (!hasCampaignName) {
+      setActiveStep("upload");
+      return;
+    }
+
     // This is the privacy boundary: only mapped normalized fields survive
     // beyond the mapping step. Unused CSV columns are dropped immediately.
-    const normalized = normalizeCustomers(parsed.rows, mapping, includedHeaders).map((customer) => ({
+    const customers = normalizeCustomers(parsed.rows, mapping, includedHeaders);
+    const prospectFilteredCustomers = filterCustomersByDateField(
+      customers,
+      "prospectDate",
+      prospectDateStart,
+      prospectDateEnd
+    );
+    const soldDateFilteredCustomers = filterCustomersByDateField(
+      prospectFilteredCustomers,
+      "soldDate",
+      soldDateStart,
+      soldDateEnd
+    );
+    const normalized = filterCustomersByDateField(
+      soldDateFilteredCustomers,
+      "lastServiceDate",
+      undefined,
+      undefined,
+      typeof lastServiceDays === "number" ? lastServiceDays : undefined
+    ).map((customer) => ({
       ...customer,
       clientId: selectedClient.clientId,
       generationStatus: "idle" as const
@@ -317,6 +392,11 @@ export default function UploadPage() {
     setMapping({});
     setIncludedHeaders([]);
     setCampaignName("");
+    setProspectDateStart("");
+    setProspectDateEnd("");
+    setSoldDateStart("");
+    setSoldDateEnd("");
+    setLastServiceDays("");
     setCleanedCustomers([]);
     setSelectedCustomerId(undefined);
     setGenerationErrors([]);
@@ -324,7 +404,7 @@ export default function UploadPage() {
   }
 
   async function generateEmails() {
-    if (cleanedCustomers.length === 0) {
+    if (cleanedCustomers.length === 0 || !hasCampaignName) {
       return;
     }
 
@@ -419,10 +499,20 @@ export default function UploadPage() {
     }
 
     if (!privateMode) {
-      const report = buildCampaignReport(selectedClient, workingCustomers, campaignName);
+      try {
+        const report = buildCampaignReport(selectedClient, workingCustomers, {
+          campaignName: trimmedCampaignName
+        });
 
-      if (report.totalEmails > 0) {
-        addCampaignReport(report);
+        if (report.totalEmails > 0) {
+          addCampaignReport(report);
+        }
+      } catch (error) {
+        const message =
+          error instanceof Error
+            ? error.message
+            : "Campaign history could not be saved locally.";
+        setGenerationErrors((currentErrors) => [...currentErrors, message]);
       }
     }
 
@@ -463,6 +553,7 @@ export default function UploadPage() {
     ? ((generationProgress.completed + generationProgress.failed) / generationProgress.total) * 100
     : 0;
   const heroPreviewUrl = heroOverrides[heroUploadType]?.[0];
+  const heroPreviewConfig = emailTypeTemplateConfig[heroUploadType];
 
   return (
     <main className="min-h-screen bg-[#080f1a] text-slate-100">
@@ -599,7 +690,7 @@ export default function UploadPage() {
             <div className="flex flex-col gap-3 sm:flex-row xl:justify-end">
               <input
                 className="h-9 min-w-56 rounded-md border border-slate-700 bg-slate-950 px-3 text-sm font-medium text-slate-100 outline-none transition focus:border-teal-400 focus:ring-2 focus:ring-teal-400/20"
-                placeholder="Campaign name"
+                placeholder="Campaign name *"
                 value={campaignName}
                 onChange={(event) => setCampaignName(event.target.value)}
               />
@@ -617,7 +708,7 @@ export default function UploadPage() {
               <button
                 type="button"
                 className="h-9 rounded-md bg-teal-500 px-4 text-sm font-semibold text-slate-950 shadow-sm transition hover:bg-teal-400 disabled:cursor-not-allowed disabled:opacity-50"
-                disabled={isGenerating || !hasCleanData}
+                disabled={isGenerating || !hasCleanData || !hasCampaignName}
                 onClick={generateEmails}
               >
                 {isGenerating ? "Generating..." : "Generate Emails"}
@@ -634,11 +725,35 @@ export default function UploadPage() {
                       <h2 className="text-lg font-semibold text-slate-50">Upload Customer CSV</h2>
                       <span className="grid h-5 w-5 place-items-center rounded-full border border-slate-600 text-xs text-slate-400">i</span>
                     </div>
+                    <div className="mt-5 grid gap-1.5">
+                      <label className="text-sm font-medium text-slate-200">
+                        Campaign name <span className="text-red-500">*</span>
+                      </label>
+                      <input
+                        className="h-10 rounded-md border border-slate-700 bg-slate-950 px-3 text-sm font-medium text-slate-100 outline-none transition focus:border-teal-400 focus:ring-2 focus:ring-teal-400/20"
+                        autoFocus
+                        placeholder="Name this campaign before uploading"
+                        value={campaignName}
+                        onChange={(event) => setCampaignName(event.target.value)}
+                      />
+                      <p className="text-xs leading-5 text-slate-400">
+                        Required. Every uploaded master list will stay tied to this campaign name through preview, generation, and dashboard history.
+                      </p>
+                    </div>
                     <div className="mt-5">
                       <FileDropzone
-                        label="Drag and drop your CSV file here or click to browse"
-                        description="CSV stays in memory while you map and generate. Unmapped columns are dropped after cleaning."
+                        label={
+                          hasCampaignName
+                            ? "Drag and drop your CSV file here or click to browse"
+                            : "Add a campaign name to unlock CSV upload"
+                        }
+                        description={
+                          hasCampaignName
+                            ? "CSV stays in memory while you map and generate. Unmapped columns are dropped after cleaning."
+                            : "The campaign name is required before you upload the master list."
+                        }
                         accept=".csv,text/csv"
+                        disabled={!hasCampaignName}
                         actionLabel="Choose CSV File"
                         variant="large"
                         onFile={handleCsvFile}
@@ -688,45 +803,20 @@ export default function UploadPage() {
                           <div
                             className="grid h-44 content-center justify-items-center gap-3 px-6 py-5 text-center"
                             style={{
-                              background:
-                                "linear-gradient(180deg, #000000 0%, #090000 26%, #210000 52%, #5c0000 78%, #b30000 100%)"
+                              background: getHeroGradient(selectedBrandConfig)
                             }}
                           >
-                            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-white/80">
-                              {heroUploadType === "trade"
-                                ? "Vehicle value check"
-                                : heroUploadType === "service"
-                                  ? "Service follow-up"
-                                  : heroUploadType === "lease"
-                                    ? "Lease timing"
-                                    : "Quick check-in"}
+                            <p className="text-xs font-semibold tracking-[0.08em] text-white/80">
+                              {heroPreviewConfig.heroEyebrow}
                             </p>
-                            <p className="max-w-xl text-3xl font-black uppercase leading-none tracking-[0.02em] text-white">
-                              {heroUploadType === "trade"
-                                ? "See where your trade stands"
-                                : heroUploadType === "service"
-                                  ? "Keep your vehicle on track"
-                                  : heroUploadType === "lease"
-                                    ? "Review your next options"
-                                    : "A quick note from our team"}
+                            <p className="max-w-xl text-3xl font-black leading-none tracking-[0.01em] text-white">
+                              {toTitleCase(heroPreviewConfig.heroTitle)}
                             </p>
-                            <div className="rounded-xl bg-white px-4 py-2 text-sm font-bold uppercase tracking-[0.02em] text-slate-950">
-                              {heroUploadType === "trade"
-                                ? "CHECK TRADE OPTIONS"
-                                : heroUploadType === "service"
-                                  ? "SCHEDULE SERVICE"
-                                  : heroUploadType === "lease"
-                                    ? "REVIEW LEASE OPTIONS"
-                                    : "GET IN TOUCH"}
+                            <div className="rounded-xl border border-white/90 bg-transparent px-4 py-2 text-sm font-bold tracking-[0.01em] text-white">
+                              {heroPreviewConfig.ctaLabel}
                             </div>
                             <p className="text-xs text-white/80">
-                              {heroUploadType === "trade"
-                                ? "Takes less than 2 minutes"
-                                : heroUploadType === "service"
-                                  ? "Quick appointment help"
-                                  : heroUploadType === "lease"
-                                    ? "Simple next-step review"
-                                    : "A quick reply is all it takes"}
+                              {heroPreviewConfig.supportText}
                             </p>
                           </div>
                         )}
@@ -808,8 +898,21 @@ export default function UploadPage() {
                 headers={parsed.headers}
                 mapping={mapping}
                 includedHeaders={includedHeaders}
+                prospectYearOptions={prospectYearOptions}
+                soldYearOptions={soldYearOptions}
+                prospectDateStart={prospectDateStart}
+                prospectDateEnd={prospectDateEnd}
+                soldDateStart={soldDateStart}
+                soldDateEnd={soldDateEnd}
+                lastServiceDays={lastServiceDays}
+                onProspectDateStartChange={setProspectDateStart}
+                onProspectDateEndChange={setProspectDateEnd}
+                onSoldDateStartChange={setSoldDateStart}
+                onSoldDateEndChange={setSoldDateEnd}
+                onLastServiceDaysChange={setLastServiceDays}
                 onMappingChange={setMapping}
                 onIncludedHeadersChange={setIncludedHeaders}
+                requiresCampaignName={!hasCampaignName}
                 onConfirm={buildCleanedPreview}
               />
             ) : null}

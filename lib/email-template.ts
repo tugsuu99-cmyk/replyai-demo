@@ -60,6 +60,7 @@ export function renderBrandedEmailHtml(
 
   return EmailShell({
     title: customer.subject || headline,
+    preheader: customer.ctaLine || headline,
     brandConfig,
     shellConfig,
     children: content

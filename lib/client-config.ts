@@ -81,11 +81,16 @@ export function createClientProfile(seed?: Partial<ClientProfile>): ClientProfil
 }
 
 export function clientProfileToBrandConfig(client: ClientProfile, emailType?: EmailType): BrandConfig {
+  const secondaryColor =
+    client.automakerBrand.toLowerCase() === "nissan" && client.secondaryColor.toLowerCase() === "#111827"
+      ? "#000000"
+      : client.secondaryColor;
+
   return {
     storeName: client.storeName,
     logoUrl: client.logoUrl,
     primaryColor: client.primaryColor,
-    secondaryColor: client.secondaryColor,
+    secondaryColor,
     accentColor: client.accentColor,
     ctaUrl: emailType ? client.ctaUrls[emailType] || client.ctaUrls.default : client.ctaUrls.default,
     phone: client.phone,
