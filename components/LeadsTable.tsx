@@ -73,26 +73,34 @@ export function LeadsTable({
       </div>
 
       <div className="max-h-[560px] overflow-auto">
-        <table className="min-w-full border-collapse text-left text-sm">
-          <thead className="sticky top-0 z-10 bg-slate-900 text-xs uppercase tracking-normal text-slate-400">
-            <tr>
-              <th className="whitespace-nowrap border-b border-slate-800 px-4 py-3">Email type</th>
-              <th className="whitespace-nowrap border-b border-slate-800 px-4 py-3">Status</th>
-              <th className="whitespace-nowrap border-b border-slate-800 px-4 py-3">First name</th>
-              <th className="whitespace-nowrap border-b border-slate-800 px-4 py-3">Last name</th>
-              <th className="whitespace-nowrap border-b border-slate-800 px-4 py-3">Email</th>
-              <th className="whitespace-nowrap border-b border-slate-800 px-4 py-3">Year</th>
-              <th className="whitespace-nowrap border-b border-slate-800 px-4 py-3">Make</th>
-              <th className="whitespace-nowrap border-b border-slate-800 px-4 py-3">Model</th>
-              <th className="whitespace-nowrap border-b border-slate-800 px-4 py-3">Mileage</th>
-              <th className="whitespace-nowrap border-b border-slate-800 px-4 py-3">Lease end</th>
-              <th className="whitespace-nowrap border-b border-slate-800 px-4 py-3">Last service</th>
-              <th className="whitespace-nowrap border-b border-slate-800 px-4 py-3">Trade value</th>
-              <th className="whitespace-nowrap border-b border-slate-800 px-4 py-3">Email preview</th>
-            </tr>
-          </thead>
-          <tbody>
-            {customers.map((customer) => {
+        {customers.length === 0 ? (
+          <div className="border-t border-slate-800 px-5 py-10 text-center">
+            <p className="text-sm font-medium text-slate-200">No customers matched the current filters.</p>
+            <p className="mt-2 text-sm text-slate-400">
+              Try widening the prospect, sold, or last service filters in Mapping, then build the cleaned preview again.
+            </p>
+          </div>
+        ) : (
+          <table className="min-w-full border-collapse text-left text-sm">
+            <thead className="sticky top-0 z-10 bg-slate-900 text-xs uppercase tracking-normal text-slate-400">
+              <tr>
+                <th className="whitespace-nowrap border-b border-slate-800 px-4 py-3">Email type</th>
+                <th className="whitespace-nowrap border-b border-slate-800 px-4 py-3">Status</th>
+                <th className="whitespace-nowrap border-b border-slate-800 px-4 py-3">First name</th>
+                <th className="whitespace-nowrap border-b border-slate-800 px-4 py-3">Last name</th>
+                <th className="whitespace-nowrap border-b border-slate-800 px-4 py-3">Email</th>
+                <th className="whitespace-nowrap border-b border-slate-800 px-4 py-3">Year</th>
+                <th className="whitespace-nowrap border-b border-slate-800 px-4 py-3">Make</th>
+                <th className="whitespace-nowrap border-b border-slate-800 px-4 py-3">Model</th>
+                <th className="whitespace-nowrap border-b border-slate-800 px-4 py-3">Mileage</th>
+                <th className="whitespace-nowrap border-b border-slate-800 px-4 py-3">Lease end</th>
+                <th className="whitespace-nowrap border-b border-slate-800 px-4 py-3">Last service</th>
+                <th className="whitespace-nowrap border-b border-slate-800 px-4 py-3">Trade value</th>
+                <th className="whitespace-nowrap border-b border-slate-800 px-4 py-3">Email preview</th>
+              </tr>
+            </thead>
+            <tbody>
+              {customers.map((customer) => {
               const isExpanded = expandedCustomerId === customer.id;
               const hasGeneratedEmail = Boolean(customer.subject && customer.headline && customer.emailBody);
 
@@ -155,9 +163,10 @@ export function LeadsTable({
                   ) : null}
                 </Fragment>
               );
-            })}
-          </tbody>
-        </table>
+              })}
+            </tbody>
+          </table>
+        )}
       </div>
     </section>
   );

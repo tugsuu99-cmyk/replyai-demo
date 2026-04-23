@@ -21,11 +21,17 @@ type ColumnMapperProps = {
   soldDateStart: string;
   soldDateEnd: string;
   lastServiceDays: number | "";
+  applyProspectDateFilter: boolean;
+  applySoldDateFilter: boolean;
+  applyLastServiceFilter: boolean;
   onProspectDateStartChange: (value: string) => void;
   onProspectDateEndChange: (value: string) => void;
   onSoldDateStartChange: (value: string) => void;
   onSoldDateEndChange: (value: string) => void;
   onLastServiceDaysChange: (value: number | "") => void;
+  onApplyProspectDateFilterChange: (value: boolean) => void;
+  onApplySoldDateFilterChange: (value: boolean) => void;
+  onApplyLastServiceFilterChange: (value: boolean) => void;
   onMappingChange: (mapping: ColumnMapping) => void;
   onIncludedHeadersChange: (headers: string[]) => void;
   requiresCampaignName?: boolean;
@@ -81,11 +87,17 @@ export function ColumnMapper({
   soldDateStart,
   soldDateEnd,
   lastServiceDays,
+  applyProspectDateFilter,
+  applySoldDateFilter,
+  applyLastServiceFilter,
   onProspectDateStartChange,
   onProspectDateEndChange,
   onSoldDateStartChange,
   onSoldDateEndChange,
   onLastServiceDaysChange,
+  onApplyProspectDateFilterChange,
+  onApplySoldDateFilterChange,
+  onApplyLastServiceFilterChange,
   onMappingChange,
   onIncludedHeadersChange,
   requiresCampaignName,
@@ -367,12 +379,22 @@ export function ColumnMapper({
                     <p className="mt-1 text-xs text-slate-400">
                       Include customers whose last service date is older than the selected number of days.
                     </p>
+                    <label className="mt-3 inline-flex items-center gap-2 text-xs font-medium text-slate-300">
+                      <input
+                        type="checkbox"
+                        className="h-4 w-4 rounded border-slate-600 bg-slate-950 text-accent focus:ring-accent"
+                        checked={applyLastServiceFilter}
+                        onChange={(event) => onApplyLastServiceFilterChange(event.target.checked)}
+                      />
+                      Apply this filter
+                    </label>
                   </div>
                   <label className="grid gap-1 text-xs text-slate-300">
                     Days since service
                     <select
                       className="h-9 rounded-md border border-slate-700 bg-slate-950 px-3 text-sm text-slate-100 outline-none transition focus:border-accent focus:ring-2 focus:ring-teal-950"
                       value={lastServiceDays}
+                      disabled={!applyLastServiceFilter}
                       onChange={(event) => onLastServiceDaysChange(event.target.value ? Number(event.target.value) : "")}
                     >
                       <option value="">No service filter</option>
@@ -395,6 +417,15 @@ export function ColumnMapper({
                     <p className="mt-1 text-xs text-slate-400">
                       Filter the master list by the mapped prospect date.
                     </p>
+                    <label className="mt-3 inline-flex items-center gap-2 text-xs font-medium text-slate-300">
+                      <input
+                        type="checkbox"
+                        className="h-4 w-4 rounded border-slate-600 bg-slate-950 text-accent focus:ring-accent"
+                        checked={applyProspectDateFilter}
+                        onChange={(event) => onApplyProspectDateFilterChange(event.target.checked)}
+                      />
+                      Apply this filter
+                    </label>
                   </div>
                   <label className="grid gap-1 text-xs text-slate-300">
                     From year
@@ -406,6 +437,7 @@ export function ColumnMapper({
                       placeholder="YYYY"
                       list="prospect-year-options"
                       value={prospectDateStart}
+                      disabled={!applyProspectDateFilter}
                       onChange={(event) => onProspectDateStartChange(normalizeYearInput(event.target.value))}
                     />
                   </label>
@@ -419,6 +451,7 @@ export function ColumnMapper({
                       placeholder="YYYY"
                       list="prospect-year-options"
                       value={prospectDateEnd}
+                      disabled={!applyProspectDateFilter}
                       onChange={(event) => onProspectDateEndChange(normalizeYearInput(event.target.value))}
                     />
                   </label>
@@ -441,6 +474,15 @@ export function ColumnMapper({
                     <p className="mt-1 text-xs text-slate-400">
                       Filter the master list by the mapped sold date.
                     </p>
+                    <label className="mt-3 inline-flex items-center gap-2 text-xs font-medium text-slate-300">
+                      <input
+                        type="checkbox"
+                        className="h-4 w-4 rounded border-slate-600 bg-slate-950 text-accent focus:ring-accent"
+                        checked={applySoldDateFilter}
+                        onChange={(event) => onApplySoldDateFilterChange(event.target.checked)}
+                      />
+                      Apply this filter
+                    </label>
                   </div>
                   <label className="grid gap-1 text-xs text-slate-300">
                     From year
@@ -452,6 +494,7 @@ export function ColumnMapper({
                       placeholder="YYYY"
                       list="sold-year-options"
                       value={soldDateStart}
+                      disabled={!applySoldDateFilter}
                       onChange={(event) => onSoldDateStartChange(normalizeYearInput(event.target.value))}
                     />
                   </label>
@@ -465,6 +508,7 @@ export function ColumnMapper({
                       placeholder="YYYY"
                       list="sold-year-options"
                       value={soldDateEnd}
+                      disabled={!applySoldDateFilter}
                       onChange={(event) => onSoldDateEndChange(normalizeYearInput(event.target.value))}
                     />
                   </label>

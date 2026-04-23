@@ -209,6 +209,9 @@ export default function UploadPage() {
   const [soldDateStart, setSoldDateStart] = useState("");
   const [soldDateEnd, setSoldDateEnd] = useState("");
   const [lastServiceDays, setLastServiceDays] = useState<number | "">("");
+  const [applyProspectDateFilter, setApplyProspectDateFilter] = useState(false);
+  const [applySoldDateFilter, setApplySoldDateFilter] = useState(false);
+  const [applyLastServiceFilter, setApplyLastServiceFilter] = useState(false);
   const [cleanedCustomers, setCleanedCustomers] = useState<NormalizedCustomer[]>([]);
   const [selectedCustomerId, setSelectedCustomerId] = useState<string>();
   const [isGenerating, setIsGenerating] = useState(false);
@@ -281,6 +284,9 @@ export default function UploadPage() {
     setSoldDateStart("");
     setSoldDateEnd("");
     setLastServiceDays("");
+    setApplyProspectDateFilter(false);
+    setApplySoldDateFilter(false);
+    setApplyLastServiceFilter(false);
     setCleanedCustomers([]);
     setSelectedCustomerId(undefined);
     setGenerationErrors([]);
@@ -297,25 +303,34 @@ export default function UploadPage() {
     // This is the privacy boundary: only mapped normalized fields survive
     // beyond the mapping step. Unused CSV columns are dropped immediately.
     const customers = normalizeCustomers(parsed.rows, mapping, includedHeaders);
-    const prospectFilteredCustomers = filterCustomersByDateField(
-      customers,
-      "prospectDate",
-      prospectDateStart,
-      prospectDateEnd
-    );
-    const soldDateFilteredCustomers = filterCustomersByDateField(
-      prospectFilteredCustomers,
-      "soldDate",
-      soldDateStart,
-      soldDateEnd
-    );
-    const normalized = filterCustomersByDateField(
-      soldDateFilteredCustomers,
-      "lastServiceDate",
-      undefined,
-      undefined,
-      typeof lastServiceDays === "number" ? lastServiceDays : undefined
-    ).map((customer) => ({
+    const activeAudienceSlices: NormalizedCustomer[][] = [];
+
+    if (applyProspectDateFilter && (prospectDateStart || prospectDateEnd)) {
+      activeAudienceSlices.push(
+        filterCustomersByDateField(customers, "prospectDate", prospectDateStart, prospectDateEnd)
+      );
+    }
+
+    if (applySoldDateFilter && (soldDateStart || soldDateEnd)) {
+      activeAudienceSlices.push(
+        filterCustomersByDateField(customers, "soldDate", soldDateStart, soldDateEnd)
+      );
+    }
+
+    if (applyLastServiceFilter && typeof lastServiceDays === "number") {
+      activeAudienceSlices.push(
+        filterCustomersByDateField(customers, "lastServiceDate", undefined, undefined, lastServiceDays)
+      );
+    }
+
+    const filteredCustomers =
+      activeAudienceSlices.length === 0
+        ? customers
+        : customers.filter((customer) =>
+            activeAudienceSlices.some((slice) => slice.some((matchedCustomer) => matchedCustomer.id === customer.id))
+          );
+
+    const normalized = filteredCustomers.map((customer) => ({
       ...customer,
       clientId: selectedClient.clientId,
       generationStatus: "idle" as const
@@ -397,6 +412,9 @@ export default function UploadPage() {
     setSoldDateStart("");
     setSoldDateEnd("");
     setLastServiceDays("");
+    setApplyProspectDateFilter(false);
+    setApplySoldDateFilter(false);
+    setApplyLastServiceFilter(false);
     setCleanedCustomers([]);
     setSelectedCustomerId(undefined);
     setGenerationErrors([]);
@@ -905,11 +923,17 @@ export default function UploadPage() {
                 soldDateStart={soldDateStart}
                 soldDateEnd={soldDateEnd}
                 lastServiceDays={lastServiceDays}
+                applyProspectDateFilter={applyProspectDateFilter}
+                applySoldDateFilter={applySoldDateFilter}
+                applyLastServiceFilter={applyLastServiceFilter}
                 onProspectDateStartChange={setProspectDateStart}
                 onProspectDateEndChange={setProspectDateEnd}
                 onSoldDateStartChange={setSoldDateStart}
                 onSoldDateEndChange={setSoldDateEnd}
                 onLastServiceDaysChange={setLastServiceDays}
+                onApplyProspectDateFilterChange={setApplyProspectDateFilter}
+                onApplySoldDateFilterChange={setApplySoldDateFilter}
+                onApplyLastServiceFilterChange={setApplyLastServiceFilter}
                 onMappingChange={setMapping}
                 onIncludedHeadersChange={setIncludedHeaders}
                 requiresCampaignName={!hasCampaignName}
