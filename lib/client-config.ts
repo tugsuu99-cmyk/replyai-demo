@@ -80,6 +80,33 @@ export function createClientProfile(seed?: Partial<ClientProfile>): ClientProfil
   };
 }
 
+export function createBlankClientProfile(seed?: Partial<ClientProfile>): ClientProfile {
+  return {
+    ...defaultClientProfile,
+    clientId: seed?.clientId ?? createId(),
+    clientName: seed?.clientName ?? "",
+    automakerBrand: seed?.automakerBrand ?? "",
+    storeName: seed?.storeName ?? "",
+    logoUrl: seed?.logoUrl ?? "",
+    primaryColor: seed?.primaryColor ?? defaultClientProfile.primaryColor,
+    secondaryColor: seed?.secondaryColor ?? defaultClientProfile.secondaryColor,
+    accentColor: seed?.accentColor ?? defaultClientProfile.accentColor,
+    website: seed?.website ?? "",
+    phone: seed?.phone ?? "",
+    address: seed?.address ?? "",
+    senderName: seed?.senderName ?? "",
+    senderTitle: seed?.senderTitle ?? "",
+    footerText: seed?.footerText ?? "",
+    ctaUrls: {
+      default: seed?.ctaUrls?.default ?? "",
+      trade: seed?.ctaUrls?.trade ?? "",
+      service: seed?.ctaUrls?.service ?? "",
+      lease: seed?.ctaUrls?.lease ?? "",
+      general: seed?.ctaUrls?.general ?? ""
+    }
+  };
+}
+
 export function clientProfileToBrandConfig(client: ClientProfile, emailType?: EmailType): BrandConfig {
   const secondaryColor =
     client.automakerBrand.toLowerCase() === "nissan" && client.secondaryColor.toLowerCase() === "#111827"

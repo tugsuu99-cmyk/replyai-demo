@@ -10,7 +10,7 @@ import { FileDropzone } from "@/components/FileDropzone";
 import { LeadsTable } from "@/components/LeadsTable";
 import {
   clientProfileToBrandConfig,
-  createClientProfile,
+  createBlankClientProfile,
   defaultClientProfile,
   loadClientProfiles,
   loadSelectedClientId,
@@ -565,7 +565,7 @@ export default function UploadPage() {
               type="button"
               className="grid h-8 w-8 place-items-center rounded-md border border-slate-700 text-slate-300 transition hover:border-accent hover:text-accent"
               aria-label="Add client"
-              onClick={() => setEditingClient(createClientProfile())}
+              onClick={() => setEditingClient(createBlankClientProfile())}
             >
               <NavIcon type="plus" />
             </button>
