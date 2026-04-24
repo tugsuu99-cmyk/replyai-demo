@@ -40,14 +40,25 @@ export type CampaignEmailSnapshot = {
   customerId: string;
   firstName: string;
   lastName?: string;
+  email?: string;
   emailType: EmailType;
+  year?: number;
+  make?: string;
+  model?: string;
+  mileage?: number;
+  leaseEndDate?: string;
+  lastServiceDate?: string;
+  tradeValue?: number;
   subject: string;
   headline: string;
   emailBody: string;
   ctaLine?: string;
+  heroImageUrl?: string;
+  customContext?: Record<string, string>;
 };
 
 export const CAMPAIGN_REPORTS_STORAGE_KEY = "bdc-email-campaign-reports";
+export const EDIT_CAMPAIGN_DRAFT_STORAGE_KEY = "bdc-email-edit-campaign-draft";
 
 export const CAMPAIGN_AUDIENCE_LABELS: Record<CampaignAudienceType, string> = {
   standard: "Standard",
@@ -90,6 +101,7 @@ export function buildCampaignReport(
   client: ClientProfile,
   customers: NormalizedCustomer[],
   options?: {
+    campaignId?: string;
     campaignName?: string;
     audienceType?: CampaignAudienceType;
     audienceStartDate?: string;
@@ -108,15 +120,25 @@ export function buildCampaignReport(
     customerId: customer.id,
     firstName: customer.firstName,
     lastName: customer.lastName,
+    email: customer.email,
     emailType: customer.emailType,
+    year: customer.year,
+    make: customer.make,
+    model: customer.model,
+    mileage: customer.mileage,
+    leaseEndDate: customer.leaseEndDate,
+    lastServiceDate: customer.lastServiceDate,
+    tradeValue: customer.tradeValue,
     subject: customer.subject ?? "",
     headline: customer.headline ?? "",
     emailBody: customer.emailBody ?? "",
-    ctaLine: customer.ctaLine ?? ""
+    ctaLine: customer.ctaLine ?? "",
+    heroImageUrl: customer.heroImageUrl,
+    customContext: customer.customContext
   }));
 
   return {
-    campaignId: createCampaignId(),
+    campaignId: options?.campaignId ?? createCampaignId(),
     clientId: client.clientId,
     clientName: client.clientName,
     campaignName: options?.campaignName?.trim() || formatCampaignName(client.clientName, date),
@@ -191,9 +213,40 @@ export function saveCampaignReports(reports: CampaignReport[]) {
 }
 
 export function addCampaignReport(report: CampaignReport) {
-  saveCampaignReports([report, ...loadCampaignReports()].slice(0, 20));
+  const existingReports = loadCampaignReports().filter((existingReport) => existingReport.campaignId !== report.campaignId);
+  saveCampaignReports([report, ...existingReports].slice(0, 20));
 }
 
 export function deleteCampaignReport(campaignId: string) {
   saveCampaignReports(loadCampaignReports().filter((report) => report.campaignId !== campaignId));
+}
+
+export function saveEditCampaignDraft(report: CampaignReport) {
+  window.localStorage.setItem(EDIT_CAMPAIGN_DRAFT_STORAGE_KEY, JSON.stringify(report));
+}
+
+export function loadEditCampaignDraft() {
+  if (typeof window === "undefined") {
+    return null;
+  }
+
+  const storedValue = window.localStorage.getItem(EDIT_CAMPAIGN_DRAFT_STORAGE_KEY);
+
+  if (!storedValue) {
+    return null;
+  }
+
+  try {
+    return JSON.parse(storedValue) as CampaignReport;
+  } catch {
+    return null;
+  }
+}
+
+export function clearEditCampaignDraft() {
+  if (typeof window === "undefined") {
+    return;
+  }
+
+  window.localStorage.removeItem(EDIT_CAMPAIGN_DRAFT_STORAGE_KEY);
 }

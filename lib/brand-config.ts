@@ -4,6 +4,7 @@ export type BrandConfig = {
   primaryColor: string;
   secondaryColor: string;
   accentColor: string;
+  footerBackgroundColor: string;
   ctaUrl: string;
   phone: string;
   address: string;
@@ -29,6 +30,7 @@ export const defaultBrandConfig: BrandConfig = {
   primaryColor: "#0f766e",
   secondaryColor: "#0f172a",
   accentColor: "#14b8a6",
+  footerBackgroundColor: "#0f766e",
   ctaUrl: "https://example.com",
   phone: "(555) 123-4567",
   address: "123 Main Street, Your City, ST 12345",

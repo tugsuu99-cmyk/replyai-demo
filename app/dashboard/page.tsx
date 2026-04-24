@@ -1,19 +1,24 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
 import { clientProfileToBrandConfig, loadClientProfiles, type ClientProfile } from "@/lib/client-config";
 import { defaultBrandConfig } from "@/lib/brand-config";
 import { renderBrandedEmailHtml } from "@/lib/email-template";
+import { downloadCsv } from "@/lib/export";
 import type { NormalizedCustomer } from "@/lib/normalize";
 import {
   CAMPAIGN_AUDIENCE_LABELS,
+  clearEditCampaignDraft,
   deleteCampaignReport,
   formatCampaignName,
   loadCampaignReports,
+  saveEditCampaignDraft,
   type CampaignReport
 } from "@/lib/reporting";
 import { EMAIL_TYPES, emailTypeLabel } from "@/lib/rules";
+import { exportSendPulseCsv } from "@/lib/sendpulse";
 
 function formatDate(value: string) {
   return new Intl.DateTimeFormat(undefined, {
@@ -37,7 +42,64 @@ function formatCampaignWindow(startDate?: string, endDate?: string) {
   return startDate || endDate || null;
 }
 
+function reportToCustomers(report: CampaignReport): NormalizedCustomer[] {
+  return report.emails.map((email, index) => ({
+    id: email.customerId || `customer-${index + 1}`,
+    clientId: report.clientId,
+    firstName: email.firstName || "",
+    lastName: email.lastName,
+    email: email.email || "",
+    emailType: email.emailType,
+    year: email.year,
+    make: email.make,
+    model: email.model,
+    mileage: email.mileage,
+    leaseEndDate: email.leaseEndDate,
+    lastServiceDate: email.lastServiceDate,
+    tradeValue: email.tradeValue,
+    subject: email.subject,
+    headline: email.headline,
+    emailBody: email.emailBody,
+    ctaLine: email.ctaLine,
+    heroImageUrl: email.heroImageUrl,
+    customContext: email.customContext,
+    generationStatus: "success"
+  }));
+}
+
+function reportToClient(report: CampaignReport, profile?: ClientProfile): ClientProfile {
+  if (profile) {
+    return profile;
+  }
+
+  return {
+    clientId: report.clientId,
+    clientName: report.clientName,
+    automakerBrand: "",
+    storeName: report.brandSnapshot?.storeName ?? defaultBrandConfig.storeName,
+    logoUrl: report.brandSnapshot?.logoUrl ?? defaultBrandConfig.logoUrl,
+    primaryColor: report.brandSnapshot?.primaryColor ?? defaultBrandConfig.primaryColor,
+    secondaryColor: report.brandSnapshot?.secondaryColor ?? defaultBrandConfig.secondaryColor,
+    accentColor: report.brandSnapshot?.accentColor ?? defaultBrandConfig.accentColor,
+    website: report.brandSnapshot?.website ?? defaultBrandConfig.website,
+    phone: report.brandSnapshot?.phone ?? defaultBrandConfig.phone,
+    address: report.brandSnapshot?.address ?? defaultBrandConfig.address,
+    senderName: report.brandSnapshot?.senderName ?? defaultBrandConfig.senderName,
+    senderTitle: report.brandSnapshot?.senderTitle ?? defaultBrandConfig.senderTitle,
+    footerText: report.brandSnapshot?.footerText ?? defaultBrandConfig.footerText,
+    ctaUrls:
+      report.brandSnapshot?.ctaUrls ?? {
+        default: defaultBrandConfig.ctaUrl,
+        trade: defaultBrandConfig.ctaUrl,
+        service: defaultBrandConfig.ctaUrl,
+        lease: defaultBrandConfig.ctaUrl,
+        general: defaultBrandConfig.ctaUrl
+      }
+  };
+}
+
 export default function DashboardPage() {
+  const router = useRouter();
   const [reports, setReports] = useState<CampaignReport[]>(() => loadCampaignReports());
   const [clientProfiles] = useState<ClientProfile[]>(() => loadClientProfiles());
   const [selectedCampaignId, setSelectedCampaignId] = useState<string>();
@@ -108,6 +170,19 @@ export default function DashboardPage() {
       setSelectedCampaignId(undefined);
       setSelectedEmailId(undefined);
     }
+  }
+
+  function handleEditCampaign(report: CampaignReport) {
+    saveEditCampaignDraft(report);
+    router.push(`/upload?editCampaign=${encodeURIComponent(report.campaignId)}`);
+  }
+
+  function handleExportCampaign(report: CampaignReport) {
+    const client = reportToClient(report, clientProfilesById[report.clientId]);
+    const customers = reportToCustomers(report);
+    const safeName = (report.campaignName || "campaign").replace(/[^a-z0-9]+/gi, "-").replace(/^-+|-+$/g, "").toLowerCase();
+
+    downloadCsv(`${safeName || "campaign"}-sendpulse.csv`, exportSendPulseCsv(customers, client));
   }
 
   return (
@@ -207,6 +282,22 @@ export default function DashboardPage() {
                           </button>
                           <button
                             type="button"
+                            className="rounded-md border border-slate-700 px-3 py-1.5 text-xs font-semibold text-slate-200 transition hover:border-accent hover:text-accent disabled:cursor-not-allowed disabled:opacity-40"
+                            disabled={report.emails.length === 0}
+                            onClick={() => handleEditCampaign(report)}
+                          >
+                            Edit
+                          </button>
+                          <button
+                            type="button"
+                            className="rounded-md border border-slate-700 px-3 py-1.5 text-xs font-semibold text-slate-200 transition hover:border-accent hover:text-accent disabled:cursor-not-allowed disabled:opacity-40"
+                            disabled={report.emails.length === 0}
+                            onClick={() => handleExportCampaign(report)}
+                          >
+                            Export
+                          </button>
+                          <button
+                            type="button"
                             className="rounded-md border border-slate-700 px-3 py-1.5 text-xs font-semibold text-slate-200 transition hover:border-red-400 hover:text-red-300"
                             onClick={() => handleDeleteCampaign(report.campaignId)}
                           >
@@ -247,11 +338,19 @@ export default function DashboardPage() {
                     color: "#ffcb05"
                   }}
                   onClick={() => {
+                    clearEditCampaignDraft();
                     setSelectedCampaignId(undefined);
                     setSelectedEmailId(undefined);
                   }}
                 >
                   Close
+                </button>
+                <button
+                  type="button"
+                  className="rounded-md border border-slate-700 px-3 py-1.5 text-xs font-semibold text-slate-200 transition hover:border-accent hover:text-accent"
+                  onClick={() => handleExportCampaign(selectedCampaign)}
+                >
+                  Export
                 </button>
               </div>
 

@@ -163,7 +163,7 @@ export function FooterBlock({
   brandConfig: BrandConfig;
 }) {
   return `<tr>
-    <td style="padding:18px 24px;background:${brandConfig.primaryColor};color:rgba(255,255,255,.9);font-size:13px;line-height:1.55;">
+    <td style="padding:18px 24px;background:${brandConfig.footerBackgroundColor};color:rgba(255,255,255,.9);font-size:13px;line-height:1.55;">
       <strong style="color:#ffffff;">${escapeHtml(brandConfig.storeName)}</strong><br />
       ${escapeHtml(brandConfig.phone)}<br />
       ${escapeHtml(brandConfig.address)}<br />

@@ -112,6 +112,9 @@ export function clientProfileToBrandConfig(client: ClientProfile, emailType?: Em
     client.automakerBrand.toLowerCase() === "nissan" && client.secondaryColor.toLowerCase() === "#111827"
       ? "#000000"
       : client.secondaryColor;
+  const looksLikeNissanPalette =
+    client.automakerBrand.toLowerCase() === "nissan" ||
+    (client.primaryColor.toLowerCase() === "#c3002f" && secondaryColor.toLowerCase() === "#000000");
 
   return {
     storeName: client.storeName,
@@ -119,6 +122,7 @@ export function clientProfileToBrandConfig(client: ClientProfile, emailType?: Em
     primaryColor: client.primaryColor,
     secondaryColor,
     accentColor: client.accentColor,
+    footerBackgroundColor: looksLikeNissanPalette ? "#000000" : client.primaryColor,
     ctaUrl: emailType ? client.ctaUrls[emailType] || client.ctaUrls.default : client.ctaUrls.default,
     phone: client.phone,
     address: client.address,

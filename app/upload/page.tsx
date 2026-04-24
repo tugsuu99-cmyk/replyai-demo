@@ -34,7 +34,12 @@ import {
   type ColumnMapping,
   type NormalizedCustomer
 } from "@/lib/normalize";
-import { addCampaignReport, buildCampaignReport } from "@/lib/reporting";
+import {
+  addCampaignReport,
+  buildCampaignReport,
+  clearEditCampaignDraft,
+  loadEditCampaignDraft
+} from "@/lib/reporting";
 import { EMAIL_TYPES, emailTypeLabel, type EmailType } from "@/lib/rules";
 import { exportSendPulseCsv } from "@/lib/sendpulse";
 import { emailTypeTemplateConfig } from "@/lib/template-config";
@@ -224,6 +229,7 @@ export default function UploadPage() {
   const [clients, setClients] = useState<ClientProfile[]>([defaultClientProfile]);
   const [selectedClientId, setSelectedClientId] = useState(defaultClientProfile.clientId);
   const [editingClient, setEditingClient] = useState<ClientProfile>();
+  const [editingCampaignId, setEditingCampaignId] = useState<string>();
   const [heroOverrides, setHeroOverrides] = useState<HeroOverrides>({});
   const [heroUploadType, setHeroUploadType] = useState<EmailType>("trade");
   const [privateMode, setPrivateMode] = useState(false);
@@ -240,6 +246,72 @@ export default function UploadPage() {
 
     return () => window.clearTimeout(hydrationTimer);
   }, []);
+
+  useEffect(() => {
+    const draftCampaignId = new URLSearchParams(window.location.search).get("editCampaign");
+
+    if (!draftCampaignId || editingCampaignId === draftCampaignId) {
+      return;
+    }
+
+    const hydrateTimer = window.setTimeout(() => {
+      const draft = loadEditCampaignDraft();
+
+      if (!draft || draft.campaignId !== draftCampaignId) {
+        return;
+      }
+
+      const restoredCustomers: NormalizedCustomer[] = draft.emails.map((email, index) => ({
+        id: email.customerId || `customer-${index + 1}`,
+        clientId: draft.clientId,
+        firstName: email.firstName || "",
+        lastName: email.lastName,
+        email: email.email || "",
+        emailType: email.emailType,
+        year: email.year,
+        make: email.make,
+        model: email.model,
+        mileage: email.mileage,
+        leaseEndDate: email.leaseEndDate,
+        lastServiceDate: email.lastServiceDate,
+        tradeValue: email.tradeValue,
+        subject: email.subject,
+        headline: email.headline,
+        emailBody: email.emailBody,
+        ctaLine: email.ctaLine,
+        heroImageUrl: email.heroImageUrl,
+        customContext: email.customContext,
+        generationStatus: "success"
+      }));
+
+      setCampaignName(draft.campaignName);
+      setSelectedClientId(draft.clientId);
+      setFileName("");
+      setParsed(emptyParsedCsv);
+      setMapping({});
+      setIncludedHeaders([]);
+      setProspectDateStart("");
+      setProspectDateEnd("");
+      setSoldDateStart("");
+      setSoldDateEnd("");
+      setLastServiceDays("");
+      setApplyProspectDateFilter(false);
+      setApplySoldDateFilter(false);
+      setApplyLastServiceFilter(false);
+      setCleanedCustomers(restoredCustomers);
+      setSelectedCustomerId(restoredCustomers[0]?.id);
+      setGenerationErrors([]);
+      setGenerationProgress({
+        total: restoredCustomers.length,
+        completed: restoredCustomers.length,
+        failed: 0
+      });
+      setEditingCampaignId(draft.campaignId);
+      setActiveStep(restoredCustomers.length > 0 ? "preview" : "leads");
+    }, 0);
+
+    return () => window.clearTimeout(hydrateTimer);
+  }, [editingCampaignId]);
 
   const selectedClient =
     clients.find((client) => client.clientId === selectedClientId) ?? clients[0] ?? defaultClientProfile;
@@ -291,6 +363,8 @@ export default function UploadPage() {
     setSelectedCustomerId(undefined);
     setGenerationErrors([]);
     setGenerationProgress({ total: 0, completed: 0, failed: 0 });
+    setEditingCampaignId(undefined);
+    clearEditCampaignDraft();
     setActiveStep(nextParsed.headers.length > 0 ? "mapping" : "upload");
   }
 
@@ -419,6 +493,8 @@ export default function UploadPage() {
     setSelectedCustomerId(undefined);
     setGenerationErrors([]);
     setGenerationProgress({ total: 0, completed: 0, failed: 0 });
+    setEditingCampaignId(undefined);
+    clearEditCampaignDraft();
   }
 
   async function generateEmails() {
@@ -519,6 +595,7 @@ export default function UploadPage() {
     if (!privateMode) {
       try {
         const report = buildCampaignReport(selectedClient, workingCustomers, {
+          campaignId: editingCampaignId,
           campaignName: trimmedCampaignName
         });
 
@@ -735,6 +812,12 @@ export default function UploadPage() {
           </header>
 
           <div className="mt-8 grid gap-5">
+            {editingCampaignId ? (
+              <div className="rounded-2xl border border-amber-500/30 bg-amber-950/30 px-4 py-3 text-sm text-amber-100">
+                Editing a saved campaign snapshot. You can rename it, switch clients, review previews, regenerate, or export. To remap the original CSV, upload the source list again.
+              </div>
+            ) : null}
+
             {activeStep === "upload" ? (
               <>
                 <section className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_minmax(360px,0.82fr)_320px]">
