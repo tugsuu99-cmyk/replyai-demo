@@ -12,6 +12,7 @@ type FileDropzoneProps = {
   compact?: boolean;
   variant?: "default" | "large";
   actionLabel?: string;
+  uploaded?: boolean;
 };
 
 function acceptsFile(file: File, accept: string) {
@@ -43,7 +44,8 @@ export function FileDropzone({
   previewUrl,
   compact,
   variant = "default",
-  actionLabel
+  actionLabel,
+  uploaded
 }: FileDropzoneProps) {
   const [isDragging, setIsDragging] = useState(false);
   const [error, setError] = useState("");
@@ -102,9 +104,11 @@ export function FileDropzone({
             onChange={(event) => handleFile(event.target.files?.[0])}
           />
           <div className="grid justify-items-center gap-5">
-            <div className="grid h-12 w-12 place-items-center rounded-lg border border-accent bg-teal-400/10 text-2xl text-accent">
-              +
-            </div>
+            {!uploaded ? (
+              <div className="grid h-12 w-12 place-items-center rounded-lg border border-accent bg-teal-400/10 text-2xl text-accent">
+                +
+              </div>
+            ) : null}
             <div>
               <p className="text-base font-medium text-slate-300">{label}</p>
               {description ? <p className="mx-auto mt-4 max-w-xs text-sm leading-6 text-slate-500">{description}</p> : null}

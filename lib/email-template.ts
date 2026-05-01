@@ -5,6 +5,7 @@ import {
   EmailShell,
   escapeHtml,
   FooterBlock,
+  getEmailCtaLabel,
   HeroSection,
   SignatureBlock
 } from "@/lib/email-components";
@@ -41,8 +42,9 @@ export function renderBrandedEmailHtml(
   const shellConfig = emailShellConfig;
   const templateConfig = emailTypeTemplateConfig[customer.emailType];
   const headline = customer.headline || fallbackHeadline(customer);
+  const ctaLabel = getEmailCtaLabel(customer, templateConfig);
   const content = [
-    HeroSection({ templateConfig, brandConfig }),
+    HeroSection({ customer, templateConfig, brandConfig, heroImageUrl: customer.heroImageUrl }),
     `<tr>
       <td style="padding:${shellConfig.contentPadding};">
         <h1 style="margin:0;color:${templateConfig.headlineStyle.color};font-size:${templateConfig.headlineStyle.fontSize}px;line-height:${templateConfig.headlineStyle.lineHeight};font-weight:${templateConfig.headlineStyle.fontWeight};">${escapeHtml(headline)}</h1>
@@ -53,9 +55,9 @@ export function renderBrandedEmailHtml(
         ${bodyParagraphs(customer.emailBody || "", shellConfig)}
       </td>
     </tr>`,
-    CTAButton({ brandConfig, templateConfig }),
+    CTAButton({ brandConfig, templateConfig, ctaLabel }),
     templateConfig.showSignatureBlock ? SignatureBlock({ brandConfig }) : "",
-    FooterBlock({ brandConfig })
+    FooterBlock({ brandConfig, disclaimer: customer.offerDisclaimer })
   ].join("");
 
   return EmailShell({

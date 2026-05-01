@@ -10,6 +10,8 @@ type LeadsTableProps = {
   customers: NormalizedCustomer[];
   brandConfig?: BrandConfig;
   getBrandConfig?: (customer: NormalizedCustomer) => BrandConfig;
+  campaignType?: string;
+  offerStrategy?: string;
   selectedCustomerId?: string;
   onSelectCustomer?: (customer: NormalizedCustomer) => void;
 };
@@ -51,10 +53,47 @@ function generationStatusClasses(status?: NormalizedCustomer["generationStatus"]
   return "border-slate-700 bg-slate-900 text-slate-400";
 }
 
+function matchReasonLabel(reason?: NormalizedCustomer["matchReason"]) {
+  if (reason === "model") {
+    return "Model";
+  }
+
+  if (reason === "bodyType") {
+    return "Body type";
+  }
+
+  if (reason === "offerStrategy") {
+    return "Strategy";
+  }
+
+  if (reason === "noOffersAvailable") {
+    return "No offers available";
+  }
+
+  return "None";
+}
+
+function emailTypeDisplay(customer: NormalizedCustomer) {
+  const primary = customer.primaryEmailType || customer.emailType;
+
+  if (primary === "offer") {
+    const addOns = customer.addOnBlocks ?? [];
+    return addOns.length > 0 ? `Offer + ${addOns.join(" + ")}` : "Offer / Sales";
+  }
+
+  if (customer.addOnBlocks && customer.addOnBlocks.length > 0) {
+    return `${primary} + ${customer.addOnBlocks.join(" + ")}`;
+  }
+
+  return emailTypeLabel(primary as EmailType);
+}
+
 export function LeadsTable({
   customers,
   brandConfig,
   getBrandConfig,
+  campaignType,
+  offerStrategy,
   selectedCustomerId,
   onSelectCustomer
 }: LeadsTableProps) {
@@ -96,6 +135,8 @@ export function LeadsTable({
                 <th className="whitespace-nowrap border-b border-slate-800 px-4 py-3">Lease end</th>
                 <th className="whitespace-nowrap border-b border-slate-800 px-4 py-3">Last service</th>
                 <th className="whitespace-nowrap border-b border-slate-800 px-4 py-3">Trade value</th>
+                <th className="whitespace-nowrap border-b border-slate-800 px-4 py-3">Matched offer</th>
+                <th className="whitespace-nowrap border-b border-slate-800 px-4 py-3">Match reason</th>
                 <th className="whitespace-nowrap border-b border-slate-800 px-4 py-3">Email preview</th>
               </tr>
             </thead>
@@ -118,7 +159,7 @@ export function LeadsTable({
                           customer.emailType
                         )}`}
                       >
-                        {emailTypeLabel(customer.emailType)}
+                        {emailTypeDisplay(customer)}
                       </span>
                     </td>
                     <td className="whitespace-nowrap px-4 py-3">
@@ -140,6 +181,12 @@ export function LeadsTable({
                     <td className="whitespace-nowrap px-4 py-3">{customer.leaseEndDate || "-"}</td>
                     <td className="whitespace-nowrap px-4 py-3">{customer.lastServiceDate || "-"}</td>
                     <td className="whitespace-nowrap px-4 py-3">{formatCurrency(customer.tradeValue)}</td>
+                    <td className="max-w-[220px] px-4 py-3">
+                      <div className="truncate text-slate-200">
+                        {customer.matchedOffer?.headline || customer.matchedOffer?.model || "-"}
+                      </div>
+                    </td>
+                    <td className="whitespace-nowrap px-4 py-3">{matchReasonLabel(customer.matchReason)}</td>
                     <td className="whitespace-nowrap px-4 py-3">
                       <button
                         type="button"
@@ -156,8 +203,13 @@ export function LeadsTable({
                   </tr>
                   {isExpanded ? (
                     <tr className="border-b border-slate-800 bg-slate-900">
-                      <td colSpan={13} className="px-4 py-4">
-                        <EmailPreview customer={customer} brandConfig={getBrandConfig?.(customer) ?? brandConfig} />
+                      <td colSpan={15} className="px-4 py-4">
+                        <EmailPreview
+                          customer={customer}
+                          brandConfig={getBrandConfig?.(customer) ?? brandConfig}
+                          campaignType={campaignType}
+                          offerStrategy={offerStrategy}
+                        />
                       </td>
                     </tr>
                   ) : null}

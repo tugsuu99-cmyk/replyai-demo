@@ -1,4 +1,7 @@
+import type { CampaignConfig } from "@/lib/campaign";
 import { type ClientCtaUrls, type ClientProfile } from "@/lib/client-config";
+import type { BodyType } from "@/lib/body-type";
+import type { NormalizedOffer, OfferMatchReason } from "@/lib/offer-matching";
 import type { NormalizedCustomer } from "@/lib/normalize";
 import { EMAIL_TYPES, type EmailType } from "@/lib/rules";
 
@@ -11,6 +14,10 @@ export type CampaignReport = {
   clientId: string;
   clientName: string;
   campaignName: string;
+  campaignType?: string;
+  offerStrategy?: CampaignConfig["offerStrategy"];
+  useIncentives?: boolean;
+  aiTone?: string;
   audienceType: CampaignAudienceType;
   audienceStartDate?: string;
   audienceEndDate?: string;
@@ -42,13 +49,19 @@ export type CampaignEmailSnapshot = {
   lastName?: string;
   email?: string;
   emailType: EmailType;
+  prospectDate?: string;
+  soldDate?: string;
   year?: number;
   make?: string;
   model?: string;
+  bodyType?: BodyType;
   mileage?: number;
   leaseEndDate?: string;
   lastServiceDate?: string;
   tradeValue?: number;
+  matchedOffer?: NormalizedOffer | null;
+  matchReason?: OfferMatchReason;
+  offerDisclaimer?: string;
   subject: string;
   headline: string;
   emailBody: string;
@@ -103,6 +116,7 @@ export function buildCampaignReport(
   options?: {
     campaignId?: string;
     campaignName?: string;
+    campaign?: CampaignConfig;
     audienceType?: CampaignAudienceType;
     audienceStartDate?: string;
     audienceEndDate?: string;
@@ -122,13 +136,19 @@ export function buildCampaignReport(
     lastName: customer.lastName,
     email: customer.email,
     emailType: customer.emailType,
+    prospectDate: customer.prospectDate,
+    soldDate: customer.soldDate,
     year: customer.year,
     make: customer.make,
     model: customer.model,
+    bodyType: customer.bodyType,
     mileage: customer.mileage,
     leaseEndDate: customer.leaseEndDate,
     lastServiceDate: customer.lastServiceDate,
     tradeValue: customer.tradeValue,
+    matchedOffer: customer.matchedOffer ?? null,
+    matchReason: customer.matchReason,
+    offerDisclaimer: customer.offerDisclaimer,
     subject: customer.subject ?? "",
     headline: customer.headline ?? "",
     emailBody: customer.emailBody ?? "",
@@ -142,6 +162,10 @@ export function buildCampaignReport(
     clientId: client.clientId,
     clientName: client.clientName,
     campaignName: options?.campaignName?.trim() || formatCampaignName(client.clientName, date),
+    campaignType: options?.campaign?.campaignType?.trim(),
+    offerStrategy: options?.campaign?.offerStrategy,
+    useIncentives: options?.campaign?.useIncentives,
+    aiTone: options?.campaign?.aiTone,
     audienceType: options?.audienceType ?? "standard",
     audienceStartDate: options?.audienceStartDate,
     audienceEndDate: options?.audienceEndDate,
@@ -182,6 +206,18 @@ export function loadCampaignReports(): CampaignReport[] {
       ...report,
       clientName: report.clientName ?? report.clientId,
       campaignName: report.campaignName ?? formatCampaignName(report.clientName ?? report.clientId, report.date),
+      campaignType: report.campaignType,
+      offerStrategy:
+        report.offerStrategy ??
+        ((report as CampaignReport & { campaignGoal?: string }).campaignGoal === "lease"
+          ? "Lease Priority"
+          : (report as CampaignReport & { campaignGoal?: string }).campaignGoal === "finance"
+            ? "Finance Priority"
+            : (report as CampaignReport & { campaignGoal?: string }).campaignGoal === "cash"
+              ? "Cash/Rebate Priority"
+              : "No Offers"),
+      useIncentives: report.useIncentives,
+      aiTone: report.aiTone,
       audienceType: report.audienceType ?? "standard",
       audienceStartDate: report.audienceStartDate,
       audienceEndDate: report.audienceEndDate,

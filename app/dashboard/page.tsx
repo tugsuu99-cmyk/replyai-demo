@@ -50,13 +50,19 @@ function reportToCustomers(report: CampaignReport): NormalizedCustomer[] {
     lastName: email.lastName,
     email: email.email || "",
     emailType: email.emailType,
+    prospectDate: email.prospectDate,
+    soldDate: email.soldDate,
     year: email.year,
     make: email.make,
     model: email.model,
+    bodyType: email.bodyType,
     mileage: email.mileage,
     leaseEndDate: email.leaseEndDate,
     lastServiceDate: email.lastServiceDate,
     tradeValue: email.tradeValue,
+    matchedOffer: email.matchedOffer ?? null,
+    matchReason: email.matchReason,
+    offerDisclaimer: email.offerDisclaimer,
     subject: email.subject,
     headline: email.headline,
     emailBody: email.emailBody,
@@ -147,10 +153,18 @@ export default function DashboardPage() {
             lastName: selectedEmail.lastName,
             email: "",
             emailType: selectedEmail.emailType,
+            year: selectedEmail.year,
+            make: selectedEmail.make,
+            model: selectedEmail.model,
+            bodyType: selectedEmail.bodyType,
+            matchedOffer: selectedEmail.matchedOffer ?? null,
+            matchReason: selectedEmail.matchReason,
+            offerDisclaimer: selectedEmail.offerDisclaimer,
             subject: selectedEmail.subject,
             headline: selectedEmail.headline,
             emailBody: selectedEmail.emailBody,
-            ctaLine: selectedEmail.ctaLine
+            ctaLine: selectedEmail.ctaLine,
+            heroImageUrl: selectedEmail.heroImageUrl
           } satisfies NormalizedCustomer,
           selectedEmailBrandConfig
         )
@@ -329,29 +343,31 @@ export default function DashboardPage() {
                     </p>
                   ) : null}
                 </div>
-                <button
-                  type="button"
-                  className="rounded-md px-3 py-1.5 text-xs font-semibold transition"
-                  style={{
-                    border: "1px solid rgba(255, 203, 5, 0.45)",
-                    background: "rgba(255, 203, 5, 0.08)",
-                    color: "#ffcb05"
-                  }}
-                  onClick={() => {
-                    clearEditCampaignDraft();
-                    setSelectedCampaignId(undefined);
-                    setSelectedEmailId(undefined);
-                  }}
-                >
-                  Close
-                </button>
-                <button
-                  type="button"
-                  className="rounded-md border border-slate-700 px-3 py-1.5 text-xs font-semibold text-slate-200 transition hover:border-accent hover:text-accent"
-                  onClick={() => handleExportCampaign(selectedCampaign)}
-                >
-                  Export
-                </button>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    className="rounded-md border border-slate-700 px-3 py-1.5 text-xs font-semibold text-slate-200 transition hover:border-accent hover:text-accent"
+                    onClick={() => handleExportCampaign(selectedCampaign)}
+                  >
+                    Export
+                  </button>
+                  <button
+                    type="button"
+                    className="rounded-md px-3 py-1.5 text-xs font-semibold transition"
+                    style={{
+                      border: "1px solid rgba(255, 203, 5, 0.45)",
+                      background: "rgba(255, 203, 5, 0.08)",
+                      color: "#ffcb05"
+                    }}
+                    onClick={() => {
+                      clearEditCampaignDraft();
+                      setSelectedCampaignId(undefined);
+                      setSelectedEmailId(undefined);
+                    }}
+                  >
+                    Close
+                  </button>
+                </div>
               </div>
 
               <div className="grid min-h-0 flex-1 lg:grid-cols-[320px_minmax(0,1fr)]">
@@ -407,10 +423,18 @@ export default function DashboardPage() {
                               lastName: selectedEmail.lastName,
                               email: "",
                               emailType: selectedEmail.emailType,
+                              year: selectedEmail.year,
+                              make: selectedEmail.make,
+                              model: selectedEmail.model,
+                              bodyType: selectedEmail.bodyType,
+                              matchedOffer: selectedEmail.matchedOffer ?? null,
+                              matchReason: selectedEmail.matchReason,
+                              offerDisclaimer: selectedEmail.offerDisclaimer,
                               subject: selectedEmail.subject,
                               headline: selectedEmail.headline,
                               emailBody: selectedEmail.emailBody,
-                              ctaLine: selectedEmail.ctaLine
+                              ctaLine: selectedEmail.ctaLine,
+                              heroImageUrl: selectedEmail.heroImageUrl
                             } satisfies NormalizedCustomer,
                             selectedEmailBrandConfig ?? defaultBrandConfig
                           )

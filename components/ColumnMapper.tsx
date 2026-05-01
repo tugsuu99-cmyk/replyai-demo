@@ -46,6 +46,12 @@ const optionalFields: FieldKey[] = [
   "make",
   "model",
   "mileage",
+  "purchaseType",
+  "saleType",
+  "dealType",
+  "financeType",
+  "contractType",
+  "intentType",
   "leaseEndDate",
   "lastServiceDate",
   "tradeValue"
@@ -206,14 +212,29 @@ export function ColumnMapper({
 
   return (
     <section className="rounded-xl border border-slate-800 bg-slate-950 shadow-sm shadow-black/20">
-      <div className="flex flex-col gap-2 px-4 py-4 sm:flex-row sm:items-start sm:justify-between">
+      <div className="flex flex-col gap-3 px-4 py-4 sm:flex-row sm:items-start sm:justify-between">
         <div>
           <h2 className="text-base font-semibold text-slate-100">Step 2: Confirm column mapping</h2>
           <p className="mt-1 max-w-3xl text-sm leading-6 text-slate-400">
             Keep the fields you need, ignore the rest, and build the cleaned preview.
           </p>
         </div>
-        <span className="text-sm font-medium text-slate-400">{headers.length} columns found</span>
+        <div className="flex flex-col items-start gap-2 sm:items-end">
+          <span className="text-sm font-medium text-slate-400">{headers.length} columns found</span>
+          <p className="text-xs text-slate-500">
+            {requiresCampaignName
+              ? "Add a campaign name before previewing clean data."
+              : "First name and email are required before previewing clean data."}
+          </p>
+          <button
+            type="button"
+            className="rounded-md bg-accent px-4 py-2 text-sm font-semibold text-slate-950 transition hover:bg-[#e3b400] disabled:cursor-not-allowed disabled:bg-slate-300"
+            disabled={!canContinue}
+            onClick={onConfirm}
+          >
+            Build cleaned preview
+          </button>
+        </div>
       </div>
 
       <div className="border-t border-slate-800 px-4 py-4">
@@ -526,21 +547,6 @@ export function ColumnMapper({
         </div>
       ) : null}
 
-      <div className="flex flex-col gap-3 border-t border-slate-800 px-4 py-4 sm:flex-row sm:items-center sm:justify-between">
-        <p className="text-sm text-slate-400">
-          {requiresCampaignName
-            ? "Add a campaign name before previewing clean data."
-            : "First name and email are required before previewing clean data."}
-        </p>
-        <button
-          type="button"
-          className="rounded-md bg-accent px-4 py-2 text-sm font-semibold text-slate-950 transition hover:bg-[#e3b400] disabled:cursor-not-allowed disabled:bg-slate-300"
-          disabled={!canContinue}
-          onClick={onConfirm}
-        >
-          Build cleaned preview
-        </button>
-      </div>
     </section>
   );
 }

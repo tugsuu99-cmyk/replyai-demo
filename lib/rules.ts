@@ -44,18 +44,36 @@ function isMissingOrOlderThanMonths(value: string | undefined, months: number, r
   return date < addMonths(referenceDate, -months);
 }
 
+export function hasTradeTrigger(customer: Pick<NormalizedCustomer, "mileage">) {
+  return typeof customer.mileage === "number" && customer.mileage > 70000;
+}
+
+export function hasLeaseTrigger(
+  customer: Pick<NormalizedCustomer, "leaseEndDate">,
+  referenceDate = new Date()
+) {
+  return isWithinNextMonths(customer.leaseEndDate, 6, referenceDate);
+}
+
+export function hasServiceTrigger(
+  customer: Pick<NormalizedCustomer, "lastServiceDate">,
+  referenceDate = new Date()
+) {
+  return isMissingOrOlderThanMonths(customer.lastServiceDate, 6, referenceDate);
+}
+
 export function getEmailType(customer: RuleCustomer, referenceDate = new Date()): EmailType {
   // Rule order matters. Put the strongest and most specific outreach reasons
   // first, then let lower-priority follow-up categories catch the rest.
-  if (typeof customer.mileage === "number" && customer.mileage > 70000) {
+  if (hasTradeTrigger(customer)) {
     return "trade";
   }
 
-  if (isWithinNextMonths(customer.leaseEndDate, 6, referenceDate)) {
+  if (hasLeaseTrigger(customer, referenceDate)) {
     return "lease";
   }
 
-  if (isMissingOrOlderThanMonths(customer.lastServiceDate, 6, referenceDate)) {
+  if (hasServiceTrigger(customer, referenceDate)) {
     return "service";
   }
 

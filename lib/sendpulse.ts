@@ -11,7 +11,15 @@ export const SENDPULSE_EXPORT_HEADERS = [
   "ctaLine",
   "htmlEmail",
   "emailType",
-  "clientId"
+  "clientId",
+  "customerBodyType",
+  "matchedOfferModel",
+  "matchedOfferBodyType",
+  "matchedOfferType",
+  "matchedOfferHeadline",
+  "matchedOfferDetails",
+  "disclaimer",
+  "matchReason"
 ];
 
 export function buildSendPulseRows(customers: NormalizedCustomer[], client: ClientProfile): CsvRow[] {
@@ -30,7 +38,15 @@ export function buildSendPulseRows(customers: NormalizedCustomer[], client: Clie
           ? renderBrandedEmailHtml(customerWithClient, brandConfig)
           : "",
       emailType: customer.emailType,
-      clientId: client.clientId
+      clientId: client.clientId,
+      customerBodyType: customer.bodyType ?? "",
+      matchedOfferModel: customer.matchedOffer?.model ?? "",
+      matchedOfferBodyType: customer.matchedOffer?.bodyType ?? "",
+      matchedOfferType: customer.matchedOffer?.offerType ?? "",
+      matchedOfferHeadline: customer.matchedOffer?.headline ?? "",
+      matchedOfferDetails: customer.matchedOffer?.details ?? "",
+      disclaimer: customer.offerDisclaimer ?? "",
+      matchReason: customer.matchReason ?? ""
     };
   });
 }

@@ -2,12 +2,22 @@
 
 import Image from "next/image";
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { ClientProfileForm } from "@/components/ClientProfileForm";
 import { ColumnMapper } from "@/components/ColumnMapper";
 import { EmailPreview } from "@/components/EmailPreview";
 import { FileDropzone } from "@/components/FileDropzone";
 import { LeadsTable } from "@/components/LeadsTable";
+import {
+  CAMPAIGN_TYPES,
+  OFFER_STRATEGIES,
+  createCampaignConfig,
+  createCampaignId,
+  sanitizeCampaignConfig,
+  type CampaignConfig,
+  type CampaignType,
+  type OfferStrategy
+} from "@/lib/campaign";
 import {
   clientProfileToBrandConfig,
   createBlankClientProfile,
@@ -24,9 +34,10 @@ import { downloadCsv } from "@/lib/export";
 import {
   loadHeroOverrides,
   saveHeroOverrides,
-  selectHeroImage,
+  selectHeroImageForCustomer,
   type HeroOverrides
 } from "@/lib/hero-library";
+import { applyOfferMatchesToCustomers, type NormalizedOffer } from "@/lib/offer-matching";
 import {
   filterCustomersByDateField,
   inferColumnMapping,
@@ -34,6 +45,7 @@ import {
   type ColumnMapping,
   type NormalizedCustomer
 } from "@/lib/normalize";
+import { buildEmailHeadline } from "@/lib/prompts";
 import {
   addCampaignReport,
   buildCampaignReport,
@@ -209,6 +221,16 @@ export default function UploadPage() {
   const [mapping, setMapping] = useState<ColumnMapping>({});
   const [includedHeaders, setIncludedHeaders] = useState<string[]>([]);
   const [campaignName, setCampaignName] = useState("");
+  const [campaignId, setCampaignId] = useState(() => createCampaignId());
+  const [campaignType, setCampaignType] = useState<CampaignType | "">("");
+  const [offerStrategy, setOfferStrategy] = useState<OfferStrategy>("No Offers");
+  const [useIncentives, setUseIncentives] = useState(false);
+  const [aiTone, setAiTone] = useState("Friendly, helpful, and conversational.");
+  const [offers, setOffers] = useState<NormalizedOffer[]>([]);
+  const [offerSourceLabel, setOfferSourceLabel] = useState("");
+  const [offerLoadError, setOfferLoadError] = useState("");
+  const [isLoadingOffers, setIsLoadingOffers] = useState(false);
+  const [offersApproved, setOffersApproved] = useState(false);
   const [prospectDateStart, setProspectDateStart] = useState("");
   const [prospectDateEnd, setProspectDateEnd] = useState("");
   const [soldDateStart, setSoldDateStart] = useState("");
@@ -217,6 +239,7 @@ export default function UploadPage() {
   const [applyProspectDateFilter, setApplyProspectDateFilter] = useState(false);
   const [applySoldDateFilter, setApplySoldDateFilter] = useState(false);
   const [applyLastServiceFilter, setApplyLastServiceFilter] = useState(false);
+  const [baseCustomers, setBaseCustomers] = useState<NormalizedCustomer[]>([]);
   const [cleanedCustomers, setCleanedCustomers] = useState<NormalizedCustomer[]>([]);
   const [selectedCustomerId, setSelectedCustomerId] = useState<string>();
   const [isGenerating, setIsGenerating] = useState(false);
@@ -268,13 +291,19 @@ export default function UploadPage() {
         lastName: email.lastName,
         email: email.email || "",
         emailType: email.emailType,
+        prospectDate: email.prospectDate,
+        soldDate: email.soldDate,
         year: email.year,
         make: email.make,
         model: email.model,
+        bodyType: email.bodyType,
         mileage: email.mileage,
         leaseEndDate: email.leaseEndDate,
         lastServiceDate: email.lastServiceDate,
         tradeValue: email.tradeValue,
+        matchedOffer: email.matchedOffer ?? null,
+        matchReason: email.matchReason,
+        offerDisclaimer: email.offerDisclaimer,
         subject: email.subject,
         headline: email.headline,
         emailBody: email.emailBody,
@@ -284,12 +313,30 @@ export default function UploadPage() {
         generationStatus: "success"
       }));
 
+      setCampaignId(draft.campaignId);
       setCampaignName(draft.campaignName);
+      setCampaignType((draft.campaignType as CampaignType | "") ?? "");
+      setOfferStrategy(draft.offerStrategy ?? "No Offers");
+      setUseIncentives(draft.useIncentives ?? false);
+      setAiTone(draft.aiTone ?? "Friendly, helpful, and conversational.");
       setSelectedClientId(draft.clientId);
       setFileName("");
       setParsed(emptyParsedCsv);
       setMapping({});
       setIncludedHeaders([]);
+      setOffers(
+        Array.from(
+          new Map(
+            draft.emails
+              .map((email) => email.matchedOffer)
+              .filter((offer): offer is NormalizedOffer => Boolean(offer))
+              .map((offer) => [`${offer.headline}-${offer.model}-${offer.offerType}`, offer])
+          ).values()
+        )
+      );
+      setOffersApproved(Boolean(draft.emails.some((email) => email.matchedOffer)));
+      setOfferSourceLabel("");
+      setOfferLoadError("");
       setProspectDateStart("");
       setProspectDateEnd("");
       setSoldDateStart("");
@@ -298,6 +345,7 @@ export default function UploadPage() {
       setApplyProspectDateFilter(false);
       setApplySoldDateFilter(false);
       setApplyLastServiceFilter(false);
+      setBaseCustomers([]);
       setCleanedCustomers(restoredCustomers);
       setSelectedCustomerId(restoredCustomers[0]?.id);
       setGenerationErrors([]);
@@ -334,6 +382,21 @@ export default function UploadPage() {
   const hasCleanData = cleanedCustomers.length > 0;
   const trimmedCampaignName = campaignName.trim();
   const hasCampaignName = trimmedCampaignName.length > 0;
+  const hasCampaignType = campaignType.length > 0;
+  const currentCampaign = useMemo<CampaignConfig>(
+    () =>
+      sanitizeCampaignConfig(
+        createCampaignConfig({
+          campaignId,
+          campaignName,
+          campaignType,
+          offerStrategy,
+          useIncentives,
+          aiTone
+        })
+      ),
+    [aiTone, campaignId, campaignName, campaignType, offerStrategy, useIncentives]
+  );
   const prospectYearOptions = useMemo(
     () => extractMappedYears(parsed, mapping, "prospectDate"),
     [parsed, mapping]
@@ -342,6 +405,153 @@ export default function UploadPage() {
     () => extractMappedYears(parsed, mapping, "soldDate"),
     [parsed, mapping]
   );
+
+  const hasCampaignSelection = hasCampaignName && hasCampaignType;
+  const canUploadCustomerList = hasCampaignSelection;
+  const hasApprovedOffersLoaded = offersApproved && offers.length > 0;
+
+  function buildCampaignWithOverrides(overrides: Partial<CampaignConfig> = {}) {
+    return sanitizeCampaignConfig(
+      createCampaignConfig({
+        ...currentCampaign,
+        ...overrides
+      })
+    );
+  }
+
+  const rematchCustomers = useCallback((
+    customers: NormalizedCustomer[],
+    options?: {
+      campaignOverride?: CampaignConfig;
+      offersOverride?: NormalizedOffer[];
+    }
+  ) => {
+    const campaignToUse = options?.campaignOverride ?? currentCampaign;
+    const offersToUse = options?.offersOverride ?? offers;
+
+    console.log("Offers used for matching:", offersToUse.length);
+
+    if (!campaignToUse.useIncentives) {
+      return applyOfferMatchesToCustomers(customers, campaignToUse, offersToUse).map((customer) => ({
+        ...customer,
+        clientId: selectedClient.clientId
+      }));
+    }
+
+    if (!offersToUse || offersToUse.length === 0) {
+      console.warn("No offers passed into matching");
+
+      return applyOfferMatchesToCustomers(customers, campaignToUse, []).map((customer) => ({
+        ...customer,
+        clientId: selectedClient.clientId,
+        matchReason: "noOffersAvailable" as const,
+        offerDisclaimer: undefined
+      }));
+    }
+
+    return applyOfferMatchesToCustomers(customers, campaignToUse, offersToUse).map((customer) => ({
+      ...customer,
+      clientId: selectedClient.clientId
+    }));
+  }, [currentCampaign, offers, selectedClient.clientId]);
+
+  function matchOffersForCampaign(
+    customers: NormalizedCustomer[],
+    options?: {
+      campaignOverride?: CampaignConfig;
+      offersOverride?: NormalizedOffer[];
+    }
+  ) {
+    return rematchCustomers(customers, options);
+  }
+
+  useEffect(() => {
+    if (baseCustomers.length > 0 || cleanedCustomers.length === 0) {
+      return;
+    }
+
+    const frameId = window.requestAnimationFrame(() => {
+      setBaseCustomers(cleanedCustomers);
+    });
+
+    return () => window.cancelAnimationFrame(frameId);
+  }, [baseCustomers.length, cleanedCustomers]);
+
+  useEffect(() => {
+    if (baseCustomers.length === 0) {
+      return;
+    }
+
+    const frameId = window.requestAnimationFrame(() => {
+      setCleanedCustomers(rematchCustomers(baseCustomers));
+    });
+
+    return () => window.cancelAnimationFrame(frameId);
+  }, [baseCustomers, rematchCustomers]);
+
+  function applyCampaignDirection(customers: NormalizedCustomer[]) {
+    return customers;
+  }
+
+  function handleCampaignTypeChange(nextCampaignType: CampaignType | "") {
+    let nextOfferStrategy = offerStrategy;
+    let nextUseIncentives = useIncentives;
+
+    if (nextCampaignType === "New Car Sales" || nextCampaignType === "Smart / Auto") {
+      nextUseIncentives = true;
+      nextOfferStrategy = "All Available Offers";
+    } else if (!nextCampaignType && useIncentives) {
+      nextOfferStrategy = "All Available Offers";
+    }
+
+    const nextCampaign = buildCampaignWithOverrides({
+      campaignType: nextCampaignType,
+      offerStrategy: nextOfferStrategy,
+      useIncentives: nextUseIncentives
+    });
+
+    setCampaignType(nextCampaignType);
+    setOfferStrategy(nextOfferStrategy);
+    setUseIncentives(nextUseIncentives);
+    if (baseCustomers.length > 0) {
+      setCleanedCustomers(matchOffersForCampaign(baseCustomers, { campaignOverride: nextCampaign }));
+    }
+  }
+
+  function handleOfferStrategyChange(nextOfferStrategy: OfferStrategy) {
+    const nextUseIncentives = nextOfferStrategy !== "No Offers";
+    const nextCampaign = buildCampaignWithOverrides({
+      offerStrategy: nextOfferStrategy,
+      useIncentives: nextUseIncentives
+    });
+
+    setOfferStrategy(nextOfferStrategy);
+    setUseIncentives(nextUseIncentives);
+    if (baseCustomers.length > 0) {
+      setCleanedCustomers(matchOffersForCampaign(baseCustomers, { campaignOverride: nextCampaign }));
+    }
+  }
+
+  function handleUseIncentivesChange(nextUseIncentives: boolean) {
+    const nextOfferStrategy =
+      !nextUseIncentives ? "No Offers" : offerStrategy === "No Offers" ? "All Available Offers" : offerStrategy;
+    const nextCampaign = buildCampaignWithOverrides({
+      useIncentives: nextUseIncentives,
+      offerStrategy: nextOfferStrategy
+    });
+
+    setUseIncentives(nextUseIncentives);
+
+    if (!nextUseIncentives) {
+      setOfferStrategy("No Offers");
+    } else if (offerStrategy === "No Offers") {
+      setOfferStrategy("All Available Offers");
+    }
+
+    if (baseCustomers.length > 0) {
+      setCleanedCustomers(matchOffersForCampaign(baseCustomers, { campaignOverride: nextCampaign }));
+    }
+  }
 
   async function handleCsvFile(file: File) {
     const text = await file.text();
@@ -359,24 +569,77 @@ export default function UploadPage() {
     setApplyProspectDateFilter(false);
     setApplySoldDateFilter(false);
     setApplyLastServiceFilter(false);
+    setBaseCustomers([]);
     setCleanedCustomers([]);
     setSelectedCustomerId(undefined);
     setGenerationErrors([]);
     setGenerationProgress({ total: 0, completed: 0, failed: 0 });
     setEditingCampaignId(undefined);
     clearEditCampaignDraft();
-    setActiveStep(nextParsed.headers.length > 0 ? "mapping" : "upload");
+    setActiveStep("upload");
+  }
+
+  async function loadOffersFromFile(file: File) {
+    setIsLoadingOffers(true);
+    setOfferLoadError("");
+
+    try {
+      const formData = new FormData();
+      formData.append("file", file);
+
+      const response = await fetch("/api/load-offers", {
+        method: "POST",
+        body: formData
+      });
+
+      const payload = (await response.json()) as {
+        offers?: NormalizedOffer[];
+        sourceLabel?: string;
+        error?: string;
+      };
+
+      if (!response.ok) {
+        throw new Error(payload.error || "Could not load offers.");
+      }
+
+      const parsedOffers = payload.offers ?? [];
+      const shouldUseIncentives =
+        parsedOffers.length > 0 &&
+        (campaignType === "New Car Sales" || campaignType === "Smart / Auto");
+      const nextCampaign = buildCampaignWithOverrides({
+        useIncentives: shouldUseIncentives ? true : currentCampaign.useIncentives
+      });
+
+      setOffers(parsedOffers);
+      setOfferSourceLabel(payload.sourceLabel || file.name);
+      setOffersApproved(parsedOffers.length > 0);
+      if (shouldUseIncentives) {
+        setUseIncentives(true);
+      }
+      if (baseCustomers.length > 0) {
+        setCleanedCustomers(
+          rematchCustomers(baseCustomers, {
+            offersOverride: parsedOffers,
+            campaignOverride: nextCampaign
+          })
+        );
+      }
+    } catch (error) {
+      setOfferLoadError(error instanceof Error ? error.message : "Could not load offers.");
+    } finally {
+      setIsLoadingOffers(false);
+    }
   }
 
   function buildCleanedPreview() {
-    if (!hasCampaignName) {
+    if (!hasCampaignSelection) {
       setActiveStep("upload");
       return;
     }
 
     // This is the privacy boundary: only mapped normalized fields survive
     // beyond the mapping step. Unused CSV columns are dropped immediately.
-    const customers = normalizeCustomers(parsed.rows, mapping, includedHeaders);
+    const customers = applyCampaignDirection(normalizeCustomers(parsed.rows, mapping, includedHeaders));
     const activeAudienceSlices: NormalizedCustomer[][] = [];
 
     if (applyProspectDateFilter && (prospectDateStart || prospectDateEnd)) {
@@ -404,12 +667,16 @@ export default function UploadPage() {
             activeAudienceSlices.some((slice) => slice.some((matchedCustomer) => matchedCustomer.id === customer.id))
           );
 
-    const normalized = filteredCustomers.map((customer) => ({
+    const preparedCustomers = filteredCustomers.map((customer) => ({
       ...customer,
       clientId: selectedClient.clientId,
       generationStatus: "idle" as const
     }));
+    const normalized = matchOffersForCampaign(preparedCustomers, {
+      campaignOverride: currentCampaign
+    });
 
+    setBaseCustomers(preparedCustomers);
     setCleanedCustomers(normalized);
     setSelectedCustomerId(normalized[0]?.id);
     setGenerationErrors([]);
@@ -481,6 +748,15 @@ export default function UploadPage() {
     setMapping({});
     setIncludedHeaders([]);
     setCampaignName("");
+    setCampaignId(createCampaignId());
+    setCampaignType("");
+    setOfferStrategy("No Offers");
+    setUseIncentives(false);
+    setAiTone("Friendly, helpful, and conversational.");
+    setOffers([]);
+    setOfferSourceLabel("");
+    setOfferLoadError("");
+    setOffersApproved(false);
     setProspectDateStart("");
     setProspectDateEnd("");
     setSoldDateStart("");
@@ -489,6 +765,7 @@ export default function UploadPage() {
     setApplyProspectDateFilter(false);
     setApplySoldDateFilter(false);
     setApplyLastServiceFilter(false);
+    setBaseCustomers([]);
     setCleanedCustomers([]);
     setSelectedCustomerId(undefined);
     setGenerationErrors([]);
@@ -498,7 +775,7 @@ export default function UploadPage() {
   }
 
   async function generateEmails() {
-    if (cleanedCustomers.length === 0 || !hasCampaignName) {
+    if (cleanedCustomers.length === 0 || !hasCampaignSelection) {
       return;
     }
 
@@ -513,9 +790,17 @@ export default function UploadPage() {
       general: []
     };
 
-    let workingCustomers: NormalizedCustomer[] = cleanedCustomers.map((customer) => {
+    let workingCustomers: NormalizedCustomer[] = matchOffersForCampaign(
+      applyCampaignDirection(cleanedCustomers)
+      ,
+      {
+        campaignOverride: currentCampaign
+      }
+    ).map((customer) => {
       const usedHeroUrls = usedHeroUrlsByType[customer.emailType];
-      const heroImageUrl = customer.heroImageUrl || selectHeroImage(customer.emailType, usedHeroUrls, heroOverrides);
+      const heroImageUrl =
+        customer.heroImageUrl ||
+        selectHeroImageForCustomer(customer, usedHeroUrls, heroOverrides);
       usedHeroUrlsByType[customer.emailType] = heroImageUrl ? [...usedHeroUrls, heroImageUrl] : usedHeroUrls;
 
       return {
@@ -550,7 +835,12 @@ export default function UploadPage() {
               headers: {
                 "Content-Type": "application/json"
               },
-              body: JSON.stringify({ customer })
+              body: JSON.stringify({
+                customer,
+                campaign: currentCampaign,
+                matchedOffer: customer.matchedOffer ?? null,
+                matchReason: customer.matchReason
+              })
             });
 
             if (!response.ok) {
@@ -559,13 +849,14 @@ export default function UploadPage() {
             }
 
             const payload = (await response.json()) as {
-              email: Pick<NormalizedCustomer, "subject" | "headline" | "emailBody" | "ctaLine">;
+              email: Pick<NormalizedCustomer, "subject" | "emailBody" | "ctaLine">;
             };
 
             completed += 1;
             replaceCustomer({
               ...customer,
               ...payload.email,
+              headline: buildEmailHeadline(customer, currentCampaign, customer.matchedOffer),
               generationStatus: "success"
             });
           } catch (error) {
@@ -595,8 +886,9 @@ export default function UploadPage() {
     if (!privateMode) {
       try {
         const report = buildCampaignReport(selectedClient, workingCustomers, {
-          campaignId: editingCampaignId,
-          campaignName: trimmedCampaignName
+          campaignId: editingCampaignId ?? campaignId,
+          campaignName: trimmedCampaignName,
+          campaign: currentCampaign
         });
 
         if (report.totalEmails > 0) {
@@ -803,7 +1095,12 @@ export default function UploadPage() {
               <button
                 type="button"
                 className="h-9 rounded-md bg-teal-500 px-4 text-sm font-semibold text-slate-950 shadow-sm transition hover:bg-teal-400 disabled:cursor-not-allowed disabled:opacity-50"
-                disabled={isGenerating || !hasCleanData || !hasCampaignName}
+                disabled={
+                  isGenerating ||
+                  !hasCleanData ||
+                  !hasCampaignSelection ||
+                  (useIncentives && !offersApproved)
+                }
                 onClick={generateEmails}
               >
                 {isGenerating ? "Generating..." : "Generate Emails"}
@@ -811,7 +1108,7 @@ export default function UploadPage() {
             </div>
           </header>
 
-          <div className="mt-8 grid gap-5">
+          <div className="mt-6 grid gap-4">
             {editingCampaignId ? (
               <div className="rounded-2xl border border-amber-500/30 bg-amber-950/30 px-4 py-3 text-sm text-amber-100">
                 Editing a saved campaign snapshot. You can rename it, switch clients, review previews, regenerate, or export. To remap the original CSV, upload the source list again.
@@ -820,13 +1117,13 @@ export default function UploadPage() {
 
             {activeStep === "upload" ? (
               <>
-                <section className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_minmax(360px,0.82fr)_320px]">
-                  <div className="rounded-xl border border-slate-800 bg-[#0d1624] p-5 shadow-lg shadow-black/20">
+                <section className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(340px,0.78fr)_300px]">
+                  <div className="rounded-xl border border-slate-800 bg-[#0d1624] p-4 shadow-lg shadow-black/20">
                     <div className="flex items-center justify-between gap-4">
                       <h2 className="text-lg font-semibold text-slate-50">Upload Customer CSV</h2>
                       <span className="grid h-5 w-5 place-items-center rounded-full border border-slate-600 text-xs text-slate-400">i</span>
                     </div>
-                    <div className="mt-5 grid gap-1.5">
+                    <div className="mt-4 grid gap-1.5">
                       <label className="text-sm font-medium text-slate-200">
                         Campaign name <span className="text-red-500">*</span>
                       </label>
@@ -841,28 +1138,177 @@ export default function UploadPage() {
                         Required. Every uploaded master list will stay tied to this campaign name through preview, generation, and dashboard history.
                       </p>
                     </div>
-                    <div className="mt-5">
+                    <div className="mt-4 grid gap-3 lg:grid-cols-2">
+                      <label className="grid min-w-0 gap-1.5">
+                        <span className="text-sm font-medium text-slate-200">
+                          Campaign type <span className="text-red-500">*</span>
+                        </span>
+                        <select
+                          className="h-10 w-full min-w-0 rounded-md border border-slate-700 bg-slate-950 px-3 text-sm font-medium text-slate-100 outline-none transition focus:border-teal-400 focus:ring-2 focus:ring-teal-400/20"
+                          value={campaignType}
+                          onChange={(event) => handleCampaignTypeChange(event.target.value as CampaignType | "")}
+                        >
+                          <option value="">Select campaign type</option>
+                          {CAMPAIGN_TYPES.map((type) => (
+                            <option key={type} value={type}>
+                              {type}
+                            </option>
+                          ))}
+                        </select>
+                        <p className="text-xs leading-5 text-slate-400">
+                          Choose the campaign framework. Customer data will still decide lease, finance, cash, trade, and service triggers.
+                        </p>
+                      </label>
+                      <label className="grid min-w-0 gap-1.5">
+                        <span className="text-sm font-medium text-slate-200">Offer strategy</span>
+                        <select
+                          className="h-10 w-full min-w-0 rounded-md border border-slate-700 bg-slate-950 px-3 text-sm font-medium text-slate-100 outline-none transition focus:border-teal-400 focus:ring-2 focus:ring-teal-400/20"
+                          value={offerStrategy}
+                          onChange={(event) => handleOfferStrategyChange(event.target.value as OfferStrategy)}
+                        >
+                          {OFFER_STRATEGIES.map((strategy) => (
+                            <option key={strategy} value={strategy}>
+                              {strategy}
+                            </option>
+                          ))}
+                        </select>
+                        <p className="text-xs leading-5 text-slate-400">
+                          Used only when customer intent is unknown or multiple valid offers are available.
+                        </p>
+                      </label>
+                      <label className="grid gap-1.5 lg:col-span-2">
+                        <span className="text-sm font-medium text-slate-200">AI tone</span>
+                        <input
+                          className="h-10 rounded-md border border-slate-700 bg-slate-950 px-3 text-sm font-medium text-slate-100 outline-none transition focus:border-teal-400 focus:ring-2 focus:ring-teal-400/20"
+                          placeholder="Friendly, helpful, and conversational."
+                          value={aiTone}
+                          onChange={(event) => setAiTone(event.target.value)}
+                        />
+                      </label>
+                      <label className="inline-flex items-center gap-3 text-sm font-medium text-slate-200 md:col-span-2">
+                        <input
+                          type="checkbox"
+                          className="h-4 w-4 rounded border-slate-600 bg-slate-950 text-accent focus:ring-accent"
+                          checked={useIncentives}
+                          onChange={(event) => handleUseIncentivesChange(event.target.checked)}
+                        />
+                        Use offers and incentives for this campaign
+                      </label>
+                      {campaignType === "Smart / Auto" ? (
+                        <p className="text-xs leading-5 text-slate-400 md:col-span-2">
+                          Smart / Auto lets customer data drive the message framework and blocks. Uploaded offers will still be used when they are available and approved.
+                        </p>
+                      ) : null}
+                    </div>
+                    {useIncentives ? (
+                      <div className="mt-4 rounded-xl border border-slate-800 bg-slate-950/70 p-4">
+                        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                          <div>
+                            <p className="text-sm font-semibold text-slate-100">Load Offers</p>
+                            <p className="mt-1 text-xs leading-5 text-slate-400">
+                              Upload the offer sheet before or after the customer list. Offers stay local and are matched before AI runs.
+                            </p>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <span className="rounded-md border border-slate-700 bg-slate-900 px-2 py-1 text-xs text-slate-300">
+                              {offers.length} offers
+                            </span>
+                            {offers.length > 0 ? (
+                              <button
+                                type="button"
+                                className={`rounded-md px-3 py-1.5 text-xs font-semibold transition ${
+                                  offersApproved
+                                    ? "border border-slate-700 bg-slate-900 text-slate-300"
+                                    : "bg-accent text-slate-950 hover:opacity-90"
+                                }`}
+                                onClick={() => setOffersApproved(true)}
+                              >
+                                {offersApproved ? "Offers ready" : "Mark Offers Ready"}
+                              </button>
+                            ) : null}
+                          </div>
+                        </div>
+                        <div className="mt-3">
+                          <FileDropzone
+                            label={isLoadingOffers ? "Loading offers..." : "Drop offer file here or click to browse"}
+                            description="Word, CSV, and Excel files are parsed automatically."
+                            accept=".docx,.csv,.xlsx,.xls"
+                            actionLabel="Load Offers"
+                            compact
+                            onFile={loadOffersFromFile}
+                          />
+                        </div>
+                        {offerSourceLabel ? (
+                          <p className="mt-2 text-xs text-slate-400">
+                            Loaded from <span className="text-slate-200">{offerSourceLabel}</span>
+                          </p>
+                        ) : null}
+                        {offerLoadError ? (
+                          <p className="mt-2 text-xs text-red-300">{offerLoadError}</p>
+                        ) : null}
+                        {offers.length > 0 ? (
+                          <div className="mt-3 grid gap-2 md:grid-cols-2">
+                            {offers.slice(0, 4).map((offer, index) => (
+                              <div key={`${offer.headline}-${offer.model}-${index}`} className="rounded-lg border border-slate-800 bg-slate-950 px-3 py-2">
+                                <p className="text-sm font-medium text-slate-100">{offer.headline || "Offer"}</p>
+                                <div className="mt-1 grid gap-1 text-xs text-slate-400">
+                                  <p>
+                                    <span className="text-slate-500">Model:</span> {offer.model || "-"}
+                                  </p>
+                                  <p>
+                                    <span className="text-slate-500">Offer type:</span> {offer.offerType}
+                                  </p>
+                                  <p>
+                                    <span className="text-slate-500">Disclaimer:</span> {offer.disclaimer ? "Yes" : "No"}
+                                  </p>
+                                </div>
+                                {offer.details ? (
+                                  <p className="mt-1 line-clamp-3 text-xs leading-5 text-slate-400">{offer.details}</p>
+                                ) : null}
+                              </div>
+                            ))}
+                          </div>
+                        ) : null}
+                      </div>
+                    ) : null}
+                    <div className="mt-4">
                       <FileDropzone
                         label={
-                          hasCampaignName
-                            ? "Drag and drop your CSV file here or click to browse"
-                            : "Add a campaign name to unlock CSV upload"
+                          fileName
+                            ? "Customer list uploaded"
+                            : canUploadCustomerList
+                              ? "Drag and drop your CSV file here or click to browse"
+                              : "Finish campaign setup to unlock CSV upload"
                         }
                         description={
-                          hasCampaignName
-                            ? "CSV stays in memory while you map and generate. Unmapped columns are dropped after cleaning."
-                            : "The campaign name is required before you upload the master list."
+                          fileName
+                            ? `${fileName} is ready to map. ${parsed.rows.length} rows and ${parsed.headers.length} columns loaded.`
+                            : canUploadCustomerList
+                              ? "CSV stays in memory while you map and generate. Unmapped columns are dropped after cleaning."
+                              : "Campaign name and campaign type are required before you upload the master list."
                         }
                         accept=".csv,text/csv"
-                        disabled={!hasCampaignName}
-                        actionLabel="Choose CSV File"
+                        disabled={!canUploadCustomerList}
+                        actionLabel={fileName ? "Replace CSV File" : "Choose CSV File"}
+                        uploaded={Boolean(fileName)}
                         variant="large"
                         onFile={handleCsvFile}
                       />
                     </div>
+                    {fileName ? (
+                      <div className="mt-3 flex justify-center">
+                        <button
+                          type="button"
+                          className="rounded-md bg-accent px-4 py-2 text-sm font-semibold text-slate-950 transition hover:opacity-90"
+                          onClick={() => setActiveStep("mapping")}
+                        >
+                          Review Mapping
+                        </button>
+                      </div>
+                    ) : null}
                   </div>
 
-                  <div className="rounded-xl border border-slate-800 bg-[#0d1624] p-5 shadow-lg shadow-black/20">
+                  <div className="rounded-xl border border-slate-800 bg-[#0d1624] p-4 shadow-lg shadow-black/20">
                     <div className="flex items-start justify-between gap-4">
                       <div>
                         <h2 className="text-lg font-semibold text-slate-50">Shared Hero Images</h2>
@@ -883,7 +1329,7 @@ export default function UploadPage() {
                       </select>
                     </div>
 
-                    <div className="mt-5">
+                    <div className="mt-4">
                       <FileDropzone
                         label={`Upload ${emailTypeLabel(heroUploadType)} Hero`}
                         accept="image/*"
@@ -893,7 +1339,7 @@ export default function UploadPage() {
                       />
                     </div>
 
-                    <div className="mt-5">
+                    <div className="mt-4">
                       <p className="text-sm font-semibold text-slate-100">Current Hero Preview</p>
                       <div className="mt-3 overflow-hidden rounded-lg border border-slate-800 bg-slate-950">
                         {heroPreviewUrl ? (
@@ -913,8 +1359,9 @@ export default function UploadPage() {
                             <p className="max-w-xl text-3xl font-black leading-none tracking-[0.01em] text-white">
                               {toTitleCase(heroPreviewConfig.heroTitle)}
                             </p>
+                            <div className="h-0.5 w-14 bg-white/90" />
                             <div className="rounded-xl border border-white/90 bg-transparent px-4 py-2 text-sm font-bold tracking-[0.01em] text-white">
-                              {heroPreviewConfig.ctaLabel}
+                              Get in touch
                             </div>
                             <p className="text-xs text-white/80">
                               {heroPreviewConfig.supportText}
@@ -929,7 +1376,7 @@ export default function UploadPage() {
                   </div>
 
                   <aside className="grid content-start gap-4">
-                    <section className="rounded-xl border border-slate-800 bg-[#0d1624] p-5 shadow-lg shadow-black/20">
+                    <section className="rounded-xl border border-slate-800 bg-[#0d1624] p-4 shadow-lg shadow-black/20">
                       <h2 className="text-lg font-semibold text-slate-50">Generation Progress</h2>
                       <div className="mt-5 grid grid-cols-3 gap-3 text-center">
                         <div className="rounded-xl bg-slate-900 p-4">
@@ -953,7 +1400,7 @@ export default function UploadPage() {
                       </p>
                     </section>
 
-                    <section className="rounded-xl border border-slate-800 bg-[#0d1624] p-5 shadow-lg shadow-black/20">
+                    <section className="rounded-xl border border-slate-800 bg-[#0d1624] p-4 shadow-lg shadow-black/20">
                       <div className="flex items-center gap-3">
                         <NavIcon type="lock" />
                         <h2 className="text-lg font-semibold text-slate-50">Privacy</h2>
@@ -967,17 +1414,6 @@ export default function UploadPage() {
                     </section>
                   </aside>
                 </section>
-
-                {fileName ? (
-                  <div className="flex flex-col gap-2 rounded-2xl border border-slate-800 bg-slate-950 px-5 py-4 text-sm text-slate-400 sm:flex-row sm:items-center sm:justify-between">
-                    <span>
-                      Loaded <strong className="text-slate-100">{fileName}</strong>
-                    </span>
-                    <span>
-                      {parsed.rows.length} rows, {parsed.headers.length} columns
-                    </span>
-                  </div>
-                ) : null}
 
                 <StepGuide />
               </>
@@ -1019,19 +1455,28 @@ export default function UploadPage() {
                 onApplyLastServiceFilterChange={setApplyLastServiceFilter}
                 onMappingChange={setMapping}
                 onIncludedHeadersChange={setIncludedHeaders}
-                requiresCampaignName={!hasCampaignName}
+                requiresCampaignName={!hasCampaignSelection}
                 onConfirm={buildCleanedPreview}
               />
             ) : null}
 
             {activeStep === "leads" ? (
-              <LeadsTable
-                customers={cleanedCustomers}
-                brandConfig={selectedBrandConfig}
-                getBrandConfig={(customer) => clientProfileToBrandConfig(selectedClient, customer.emailType)}
-                selectedCustomerId={selectedCustomerId}
-                onSelectCustomer={(customer) => setSelectedCustomerId(customer.id)}
-              />
+              <div className="grid gap-4">
+                {currentCampaign.useIncentives && !hasApprovedOffersLoaded ? (
+                  <div className="rounded-2xl border border-amber-500/30 bg-amber-950/40 px-4 py-3 text-sm text-amber-200">
+                    No approved offers loaded
+                  </div>
+                ) : null}
+                <LeadsTable
+                  customers={cleanedCustomers}
+                  brandConfig={selectedBrandConfig}
+                  getBrandConfig={(customer) => clientProfileToBrandConfig(selectedClient, customer.emailType)}
+                  campaignType={currentCampaign.campaignType}
+                  offerStrategy={currentCampaign.offerStrategy}
+                  selectedCustomerId={selectedCustomerId}
+                  onSelectCustomer={(customer) => setSelectedCustomerId(customer.id)}
+                />
+              </div>
             ) : null}
 
             {activeStep === "preview" ? (
@@ -1040,6 +1485,8 @@ export default function UploadPage() {
                   customers={cleanedCustomers}
                   brandConfig={selectedBrandConfig}
                   getBrandConfig={(customer) => clientProfileToBrandConfig(selectedClient, customer.emailType)}
+                  campaignType={currentCampaign.campaignType}
+                  offerStrategy={currentCampaign.offerStrategy}
                   selectedCustomerId={selectedCustomerId}
                   onSelectCustomer={(customer) => setSelectedCustomerId(customer.id)}
                 />
@@ -1047,6 +1494,8 @@ export default function UploadPage() {
                   <EmailPreview
                     customer={selectedPreviewCustomer}
                     brandConfig={clientProfileToBrandConfig(selectedClient, selectedPreviewCustomer.emailType)}
+                    campaignType={currentCampaign.campaignType}
+                    offerStrategy={currentCampaign.offerStrategy}
                   />
                 ) : null}
               </div>

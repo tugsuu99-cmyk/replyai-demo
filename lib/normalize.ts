@@ -1,4 +1,6 @@
 import type { CsvRow } from "@/lib/csv";
+import { inferBodyType, type BodyType } from "@/lib/body-type";
+import type { NormalizedOffer, OfferMatchReason, OfferType } from "@/lib/offer-matching";
 import { getEmailType, type EmailType } from "@/lib/rules";
 
 export type FieldKey =
@@ -10,7 +12,14 @@ export type FieldKey =
   | "year"
   | "make"
   | "model"
+  | "bodyType"
   | "mileage"
+  | "purchaseType"
+  | "saleType"
+  | "dealType"
+  | "financeType"
+  | "contractType"
+  | "intentType"
   | "leaseEndDate"
   | "lastServiceDate"
   | "tradeValue";
@@ -20,6 +29,7 @@ export type CustomerContextFields = Record<string, string>;
 export type AudienceFilterType = "standard" | "prospect" | "soldList" | "maintenance";
 export type DateFilterField = "prospectDate" | "soldDate" | "lastServiceDate";
 export const LAST_SERVICE_DAY_OPTIONS = Array.from({ length: 40 }, (_, index) => (index + 1) * 10);
+export type CustomerIntent = "lease" | "finance" | "cash" | "unknown";
 
 export type NormalizedCustomer = {
   id: string;
@@ -32,11 +42,31 @@ export type NormalizedCustomer = {
   year?: number;
   make?: string;
   model?: string;
+  bodyType?: BodyType;
   mileage?: number;
+  purchaseType?: string;
+  saleType?: string;
+  dealType?: string;
+  financeType?: string;
+  contractType?: string;
+  intentType?: string;
+  rawIntentValue?: string;
+  customerIntent?: CustomerIntent;
   leaseEndDate?: string;
   lastServiceDate?: string;
   tradeValue?: number;
   emailType: EmailType;
+  primaryEmailType?: "offer" | EmailType;
+  addOnBlocks?: Array<"Trade" | "Service">;
+  tradeBlock?: boolean;
+  serviceBlock?: boolean;
+  matchedOffer?: NormalizedOffer | null;
+  matchReason?: OfferMatchReason;
+  allowedOfferTypes?: OfferType[];
+  offersAfterIntentFilterCount?: number;
+  modelMatchFound?: boolean;
+  bodyTypeMatchFound?: boolean;
+  offerDisclaimer?: string;
   subject?: string;
   headline?: string;
   emailBody?: string;
@@ -56,7 +86,14 @@ export const FIELD_LABELS: Record<FieldKey, string> = {
   year: "Year",
   make: "Make",
   model: "Model",
+  bodyType: "Body type",
   mileage: "Mileage",
+  purchaseType: "Purchase type",
+  saleType: "Sale type",
+  dealType: "Deal type",
+  financeType: "Finance type",
+  contractType: "Contract type",
+  intentType: "Lease / finance / cash",
   leaseEndDate: "Lease end date",
   lastServiceDate: "Last service date",
   tradeValue: "Trade value"
@@ -108,14 +145,62 @@ const FIELD_SYNONYMS: Record<FieldKey, string[]> = {
   year: ["year", "vehicle year", "vehicleyear", "model year", "modelyear", "veh year"],
   make: ["make", "vehicle make", "vehiclemake", "veh make"],
   model: ["model", "vehicle model", "vehiclemodel", "veh model"],
+  bodyType: ["body type", "bodytype", "vehicle body type", "vehicle type", "segment"],
   mileage: ["mileage", "miles", "odometer", "odo", "vehicle mileage"],
+  purchaseType: [
+    "purchase type",
+    "purchasetype",
+    "purchase_type",
+    "buy type",
+    "deal purchase type",
+    "lease/finance/cash"
+  ],
+  saleType: [
+    "sale type",
+    "sales type",
+    "saletype",
+    "sales type",
+    "sale_type",
+    "sales_type"
+  ],
+  dealType: [
+    "deal type",
+    "dealtype",
+    "deal_type",
+    "transaction type",
+    "delivery type"
+  ],
+  financeType: [
+    "finance type",
+    "financetype",
+    "finance_type",
+    "finance method",
+    "finance category"
+  ],
+  contractType: [
+    "contract type",
+    "contracttype",
+    "contract_type",
+    "contract category"
+  ],
+  intentType: [
+    "lease/finance/cash",
+    "lease finance cash",
+    "lease finance cash field",
+    "intent type",
+    "purchase intent",
+    "sales intent"
+  ],
   leaseEndDate: [
     "lease end",
     "lease end date",
     "lease_end_date",
     "lease expiration",
     "lease expiry",
-    "maturity date"
+    "maturity date",
+    "lease due date",
+    "lease due",
+    "lease maturity date"
   ],
   lastServiceDate: [
     "service date",
@@ -183,6 +268,67 @@ function normalizeDate(value?: string) {
   }
 
   return date.toISOString().slice(0, 10);
+}
+
+function normalizeIntentValue(value?: string): CustomerIntent | null {
+  const cleaned = normalizeText(value)?.toLowerCase();
+
+  if (!cleaned) {
+    return null;
+  }
+
+  if (/\b(lease|leased|lease purchase)\b/.test(cleaned)) {
+    return "lease";
+  }
+
+  if (/\b(finance|financed|financing|loan|retail)\b/.test(cleaned)) {
+    return "finance";
+  }
+
+  if (/\b(cash|cash buyer|paid cash|buy\s+cash|cash\s+purchase)\b/.test(cleaned)) {
+    return "cash";
+  }
+
+  return null;
+}
+
+function isValidLifecycleDate(value?: string) {
+  if (!value) {
+    return false;
+  }
+
+  const date = new Date(value);
+
+  if (Number.isNaN(date.getTime())) {
+    return false;
+  }
+
+  return date.getFullYear() >= 2005;
+}
+
+function resolveCustomerIntent(values: Array<string | undefined>, leaseEndDate?: string) {
+  for (const value of values) {
+    const normalizedIntent = normalizeIntentValue(value);
+
+    if (normalizedIntent) {
+      return {
+        customerIntent: normalizedIntent,
+        rawIntentValue: value
+      };
+    }
+  }
+
+  if (isValidLifecycleDate(leaseEndDate)) {
+    return {
+      customerIntent: "lease" as const,
+      rawIntentValue: leaseEndDate
+    };
+  }
+
+  return {
+    customerIntent: "unknown" as const,
+    rawIntentValue: values.find(Boolean)
+  };
 }
 
 function splitName(name?: string) {
@@ -264,6 +410,17 @@ export function normalizeCustomer(
       .map((header) => [header, normalizeText(row[header])])
       .filter((entry): entry is [string, string] => Boolean(entry[1]))
   );
+  const purchaseType = normalizeText(mappedValue(row, mapping, "purchaseType"));
+  const saleType = normalizeText(mappedValue(row, mapping, "saleType"));
+  const dealType = normalizeText(mappedValue(row, mapping, "dealType"));
+  const financeType = normalizeText(mappedValue(row, mapping, "financeType"));
+  const contractType = normalizeText(mappedValue(row, mapping, "contractType"));
+  const intentType = normalizeText(mappedValue(row, mapping, "intentType"));
+  const leaseEndDate = normalizeDate(mappedValue(row, mapping, "leaseEndDate"));
+  const intentResolution = resolveCustomerIntent(
+    [purchaseType, saleType, dealType, financeType, contractType, intentType],
+    leaseEndDate
+  );
   const customerWithoutType = {
     id: `customer-${index + 1}`,
     firstName,
@@ -274,8 +431,21 @@ export function normalizeCustomer(
     year: normalizeInteger(mappedValue(row, mapping, "year")),
     make: normalizeText(mappedValue(row, mapping, "make")),
     model: normalizeText(mappedValue(row, mapping, "model")),
+    bodyType: inferBodyType(
+      mappedValue(row, mapping, "model"),
+      mappedValue(row, mapping, "make"),
+      mappedValue(row, mapping, "bodyType")
+    ),
     mileage: normalizeInteger(mappedValue(row, mapping, "mileage")),
-    leaseEndDate: normalizeDate(mappedValue(row, mapping, "leaseEndDate")),
+    purchaseType,
+    saleType,
+    dealType,
+    financeType,
+    contractType,
+    intentType,
+    rawIntentValue: intentResolution.rawIntentValue,
+    customerIntent: intentResolution.customerIntent,
+    leaseEndDate,
     lastServiceDate: normalizeDate(mappedValue(row, mapping, "lastServiceDate")),
     tradeValue: normalizeNumber(mappedValue(row, mapping, "tradeValue")),
     customContext: Object.keys(customContext).length > 0 ? customContext : undefined

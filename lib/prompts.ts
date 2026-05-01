@@ -1,8 +1,9 @@
+import type { CampaignConfig } from "@/lib/campaign";
+import type { NormalizedOffer, OfferMatchReason } from "@/lib/offer-matching";
 import type { NormalizedCustomer } from "@/lib/normalize";
 
 export type GeneratedEmail = {
   subject: string;
-  headline: string;
   emailBody: string;
   ctaLine?: string;
 };
@@ -13,6 +14,33 @@ function vehicleLabel(customer: NormalizedCustomer) {
 
 function shortVehicleLabel(customer: NormalizedCustomer) {
   return [customer.year, customer.model].filter(Boolean).join(" ") || customer.model || "your vehicle";
+}
+
+function formatBodyTypeLabel(bodyType?: NormalizedCustomer["bodyType"]) {
+  if (!bodyType || bodyType === "Unknown") {
+    return "vehicle";
+  }
+
+  return bodyType.toLowerCase();
+}
+
+function pluralizeBodyType(bodyType?: NormalizedCustomer["bodyType"]) {
+  const label = formatBodyTypeLabel(bodyType);
+
+  switch (label) {
+    case "suv":
+      return "SUVs";
+    case "ev":
+      return "EVs";
+    case "truck":
+      return "trucks";
+    case "sedan":
+      return "sedans";
+    case "van":
+      return "vans";
+    default:
+      return "vehicles";
+  }
 }
 
 function formatCurrency(value?: number) {
@@ -27,30 +55,98 @@ function formatCurrency(value?: number) {
   }).format(value);
 }
 
+function offerInstructions(
+  customer: NormalizedCustomer,
+  matchedOffer: NormalizedOffer | null | undefined,
+  matchReason: OfferMatchReason | undefined
+) {
+  if (!matchedOffer) {
+    return [
+      "No matched offer is available.",
+      "Do not mention incentives, rebates, APR, pricing, or offer language."
+    ].join("\n");
+  }
+
+  const instructions = [
+    `Matched offer headline: ${matchedOffer.headline || "none"}`,
+    `Matched offer details: ${matchedOffer.details || "none"}`,
+    `Matched offer model: ${matchedOffer.model || "none"}`,
+    `Matched offer type: ${matchedOffer.offerType}`,
+    `Match reason: ${matchReason || "none"}`,
+    "You must mention the matched offer in the email body exactly once.",
+    "Keep the offer mention to one short sentence max.",
+    "The offer mention should feel like a useful heads-up, not an ad.",
+    "Do not quote or invent pricing, APR, rebates, cash back, discounts, or incentives that are not already present in the offer details.",
+    "Do not mention the disclaimer in the email body. The template will place the exact source disclaimer at the bottom automatically."
+  ];
+
+  if (matchReason === "model") {
+    instructions.push(
+      "For an exact model match, mention the offered model and one concrete offer detail from the source headline or details.",
+      "Do not stack multiple numbers or terms in the same email."
+    );
+  }
+
+  if (matchReason === "bodyType") {
+    instructions.push(
+      `This is only a body-type fallback match. Since the customer is driving a ${customer.bodyType || "similar vehicle"}, you may use soft language like "Since you're currently driving a similar ${customer.bodyType || "vehicle"}, this ${matchedOffer.model || "option"} may be worth a look." Do not imply they own the offered model.`,
+      "For a body-type fallback, still mention the offered model plus one concrete offer detail from the source headline if available.",
+      "Keep it to a single sentence and frame it as an available option, not their vehicle."
+    );
+  }
+
+  if (matchReason === "offerStrategy") {
+    instructions.push(
+      "This is an offer-strategy fallback only. Keep the offer mention very light and optional.",
+      "Do not quote monthly payment, APR, term length, due-at-signing, cash amount, or other numeric offer terms for an offer-strategy fallback."
+    );
+  }
+
+  return instructions.join("\n");
+}
+
 function emailTypeInstructions(customer: NormalizedCustomer) {
   const vehicle = vehicleLabel(customer);
   const formattedTradeValue = formatCurrency(customer.tradeValue);
+  const primaryEmailType = customer.primaryEmailType || customer.emailType;
+  const tradeBlock = customer.tradeBlock;
+  const serviceBlock = customer.serviceBlock;
 
-  switch (customer.emailType) {
+  if (primaryEmailType === "offer") {
+    return [
+      `Primary angle: main sales or offer message about ${vehicle}.`,
+      "Lead with the matched offer and keep the sales message as the main point of the email.",
+      tradeBlock
+        ? customer.tradeValue
+          ? `Add a brief trade-in block using the mapped estimate of ${formattedTradeValue}. Keep it secondary to the offer.`
+          : "Add a brief trade-in block, but keep it secondary to the offer."
+        : "Do not add a trade-in block unless explicitly supported by the customer data.",
+      serviceBlock
+        ? "Add a brief service follow-up block, but keep it secondary to the offer."
+        : "Do not add a service block unless explicitly supported by the customer data."
+    ].join("\n");
+  }
+
+  switch (primaryEmailType) {
     case "trade":
       return [
         `Angle: quick question about whether they are still driving ${vehicle}.`,
         customer.tradeValue
           ? `Their mapped estimated trade value is ${formattedTradeValue}. Mention that estimate once in a natural, conservative way using words like around or about.`
-          : "Mention trade value or what it may be worth only in general terms.",
-        "Suggest an upgrade conversation without naming prices, payments, rebates, or discounts."
+          : "Mention trade value only in general terms if it helps the conversation.",
+        "Suggest an upgrade conversation without sounding pushy."
       ].join("\n");
     case "service":
       return [
         `Angle: quick service check-in for ${vehicle}.`,
         "Mention maintenance and catching small things before they become bigger issues.",
-        "Use soft urgency. Do not imply the vehicle is unsafe or overdue unless the data says so."
+        "Use soft urgency. Do not sound alarming."
       ].join("\n");
     case "lease":
       return [
-        "Angle: quick note because their lease may be coming up.",
-        "Mention they have options without over-explaining them.",
-        "Offer to talk through next steps in plain language."
+        `Angle: quick note about options for ${vehicle}.`,
+        "Mention timing and options in plain language.",
+        "Keep it simple and easy to respond to."
       ].join("\n");
     case "general":
       return [
@@ -60,7 +156,70 @@ function emailTypeInstructions(customer: NormalizedCustomer) {
   }
 }
 
-export function buildEmailPrompt(customer: NormalizedCustomer) {
+export function buildEmailHeadline(
+  customer: NormalizedCustomer,
+  campaign: CampaignConfig,
+  matchedOffer?: NormalizedOffer | null
+) {
+  const vehicle = [customer.year, customer.make, customer.model].filter(Boolean).join(" ");
+  const firstName = customer.firstName ? `${customer.firstName}, ` : "";
+  const bodyType = formatBodyTypeLabel(customer.bodyType);
+  const bodyTypePlural = pluralizeBodyType(customer.bodyType);
+  const primaryEmailType = customer.primaryEmailType || customer.emailType;
+
+  if (campaign.campaignType === "New Car Sales" || campaign.campaignType === "Smart / Auto") {
+    if (matchedOffer && customer.model) {
+      return `${firstName}a quick look at new options for your ${customer.model}`.trim();
+    }
+
+    if (matchedOffer) {
+      return `${firstName}a quick look at new ${bodyType} options`.trim();
+    }
+
+    if (primaryEmailType === "trade") {
+      return vehicle ? `${firstName}a quick value check on your ${vehicle}` : `${firstName}a quick value check`;
+    }
+
+    if (primaryEmailType === "service") {
+      return vehicle ? `${firstName}a quick service follow-up` : `${firstName}a quick service follow-up`;
+    }
+
+    if (customer.model && bodyType !== "vehicle") {
+      return `${firstName}${bodyTypePlural} worth a look for your ${customer.model}`.trim();
+    }
+
+    if (customer.model) {
+      return `${firstName}options worth a look for your ${customer.model}`.trim();
+    }
+
+    if (bodyType !== "vehicle") {
+      return `${firstName}a few ${bodyTypePlural} worth a look`.trim();
+    }
+
+    return `${firstName}a few options worth a look`.trim();
+  }
+
+  if (primaryEmailType === "trade") {
+    return vehicle ? `${firstName}a quick value check on your ${vehicle}` : `${firstName}a quick value check`;
+  }
+
+  if (primaryEmailType === "lease") {
+    return vehicle ? `${firstName}a quick look at your next options` : `${firstName}a quick look at your next options`;
+  }
+
+  if (primaryEmailType === "service") {
+    return vehicle ? `${firstName}a quick service follow-up` : `${firstName}a quick service follow-up`;
+  }
+
+  return `${firstName}${campaign.campaignType || "a quick note from our team"}`.trim();
+}
+
+export function buildEmailPrompt(
+  customer: NormalizedCustomer,
+  campaign: CampaignConfig,
+  matchedOffer?: NormalizedOffer | null,
+  matchReason?: OfferMatchReason
+) {
   const vehicle = vehicleLabel(customer);
   const shortVehicle = shortVehicleLabel(customer);
   const formattedTradeValue = formatCurrency(customer.tradeValue);
@@ -68,86 +227,70 @@ export function buildEmailPrompt(customer: NormalizedCustomer) {
 
   return [
     "You write dealership BDC emails that sound like a real BDC rep or sales manager.",
-    "Return strict JSON only with content fields. Do not return HTML.",
-    "Use exactly these JSON keys: subject, headline, emailBody, ctaLine.",
-    "ctaLine can be an empty string if the emailBody already ends with the right simple response prompt.",
+    "Return strict JSON only with these keys: subject, emailBody, ctaLine.",
+    "Do not return HTML, markdown, or commentary.",
     "",
     "Voice and tone:",
     "- Conversational, natural, and slightly informal.",
-    "- Friendly and helpful, but not corporate.",
+    "- Friendly and helpful, not corporate and not ad-like.",
     "- No fluff, buzzwords, hype, or generic marketing language.",
-    "- Make it feel like a quick question or a wanted-to-reach-out note.",
-    "- Occasional casual phrasing is good, such as \"just wanted to reach out\" or \"quick heads up\".",
-    "- Do not make every email start with \"I wanted to reach out\".",
+    "- No ALL CAPS.",
+    `- The requested campaign tone is: ${campaign.aiTone}`,
     "",
     "Structure:",
     "- emailBody must be 80 to 120 words.",
     "- Use 2 to 4 short paragraphs max.",
-    "- Keep the same basic flow: opening, vehicle or situation context, then CTA.",
-    "- Use short sentences.",
-    "- Make it easy to skim.",
-    "- Do not over-explain.",
-    "- Do not make emails completely different from the assigned email type strategy.",
+    "- Keep the same basic flow: opening, context, CTA.",
+    "- End with a simple question.",
+    "- Do not repeat the hero headline or email headline wording inside the body.",
     "",
-    "Consistency by email type:",
-    "- Trade emails should stay focused on value and a possible upgrade opportunity.",
-    "- Service emails should stay focused on a maintenance reminder.",
-    "- Lease emails should stay focused on timing and options.",
-    "- General emails should stay focused on a simple check-in.",
+    "Safety rules:",
+    "- Never invent pricing, APR, rebates, incentives, discounts, or approvals.",
+    "- Never use spammy or pushy language.",
+    "- If no matched offer exists, do not mention incentives or offer language.",
+    "- If a matched offer exists, include exactly one sentence in the body that mentions it clearly.",
+    "",
+    `Campaign name: ${campaign.campaignName}`,
+    `Campaign type: ${campaign.campaignType || "General campaign"}`,
+    `Offer strategy: ${campaign.offerStrategy}`,
+    `Use incentives: ${campaign.useIncentives ? "yes" : "no"}`,
+    "Campaign type sets the overall framework, tone, and allowed content blocks.",
+    "Customer data still decides lease, finance, cash, trade, and service messaging triggers.",
+    "",
+    `Email type: ${customer.emailType}`,
+    `Primary email type: ${customer.primaryEmailType || customer.emailType}`,
+    `Trade block: ${customer.tradeBlock ? "yes" : "no"}`,
+    `Service block: ${customer.serviceBlock ? "yes" : "no"}`,
+    `Add-on blocks: ${customer.addOnBlocks?.join(", ") || "none"}`,
+    emailTypeInstructions(customer),
+    "",
+    "Offer guidance:",
+    offerInstructions(customer, matchedOffer, matchReason),
     "",
     "Controlled variation:",
-    "- Do not reuse identical phrasing across customers.",
-    "- Vary the opening sentence, core-message phrasing, and CTA wording slightly.",
-    "- Avoid repeating the same opening or closing sentence.",
-    "- Use slight variation in sentence length.",
-    "- Use slight tone variation while staying friendly BDC style.",
-    "- Balance consistency and uniqueness. Do not make the emails identical, but do not make them drastically different.",
-    "",
-    "Personalization:",
-    "- Use vehicle info naturally when available.",
-    "- Mention mileage or the customer's situation only when relevant.",
-    "- If a trade email includes a known trade value, mention that estimate once naturally in the body.",
-    "- When mentioning trade value, pricing, options, service timing, or offer-like language, add one short plain-English disclaimer sentence so the claim does not sound absolute or guaranteed.",
-    "- Keep disclaimers natural and conversational, not legalistic. One short sentence is enough.",
-    "- Example trade disclaimer: \"Any trade figure would depend on condition, mileage, and a quick appraisal.\"",
-    "- Example lease disclaimer: \"Options can vary depending on your current lease and vehicle details.\"",
-    "- Example service disclaimer: \"What it needs can depend on mileage and a quick look from the service team.\"",
-    "- If additional selected CRM fields are provided below, use the relevant ones naturally when they help the email feel more personal.",
-    "- Do not force missing data into the email.",
-    "",
-    "CTA:",
-    "- ctaLine must be a simple response prompt. Prefer a question, but a casual line like \"Let me know if you'd like me to run numbers.\" is okay.",
-    "- End the emailBody with the same ctaLine as the final line when ctaLine is provided.",
-    "- Rotate CTA wording naturally across customers.",
-    "- CTA examples: \"Would you be open to taking a look?\", \"Do you have a few minutes this week?\", \"Would it make sense to check options?\", \"Let me know if you'd like me to run numbers.\"",
+    "- Vary the opening sentence, core message phrasing, and CTA wording across customers.",
+    "- Keep the strategy consistent for the assigned email type.",
+    "- Avoid defaulting to 'I just wanted to check in and see how your [vehicle] is treating you.' unless there is a strong reason.",
+    "- Rotate between different natural openings like a quick check-in, a simple follow-up, a short note, a quick question, or a wanted-to-reach-out style sentence.",
+    "- For no-offer general emails, make the second paragraph meaningfully different from the first instead of repeating the same check-in idea.",
+    "- Keep the body conversational, but do not let paragraph one and paragraph two say the same thing in slightly different words.",
     "",
     "Subject line:",
     "- Keep it under 6 words when possible.",
     "- Make it curiosity-driven, not salesy.",
-    "- It should feel like a real person wrote it.",
     "- Avoid spam words like free, deal, offer, save, urgent, guaranteed, approved, or limited.",
-    `- Good examples: \"Still driving your ${shortVehicle}?\", \"Got a minute?\", \"Quick ${customer.model || "vehicle"} question\", \"Worth a quick look?\"`,
+    `- Good examples: "Still driving your ${shortVehicle}?", "Got a minute?", "Quick ${customer.model || "vehicle"} question"`,
     "",
-    "Headline:",
-    "- Short, human, and useful inside a branded email template.",
-    "- Do not make it sound like an ad.",
-    "- Keep it aligned with the assigned email type.",
-    "- You may include the customer's first name only if it sounds natural.",
-    "- For trade headlines, focus on value or upgrade interest.",
-    "",
-    "Safety rules: do not generate pricing, APR, rebates, discounts, incentives, guarantees, or fabricated offers.",
-    "Never write \"limited time offer\" or similar pressure language.",
-    "Do not present trade values, offers, approvals, or service needs as guaranteed or final.",
-    "Only reference general opportunities supported by the data.",
-    "",
-    `Email type: ${customer.emailType}`,
-    emailTypeInstructions(customer),
+    "CTA line:",
+    "- Provide a short response prompt that can also be used in the template button area.",
+    "- Examples: \"Would you be open to taking a look?\", \"Do you have a few minutes this week?\", \"Would it make sense to check options?\"",
     "",
     "Customer data:",
     `First name: ${customer.firstName || "there"}`,
     `Last name: ${customer.lastName || "unknown"}`,
     `Email: ${customer.email || "unknown"}`,
     `Vehicle: ${vehicle}`,
+    `Body type: ${customer.bodyType || "Unknown"}`,
     `Mileage: ${customer.mileage ?? "unknown"}`,
     `Lease end date: ${customer.leaseEndDate || "unknown"}`,
     `Last service date: ${customer.lastServiceDate || "unknown"}`,
