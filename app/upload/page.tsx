@@ -859,14 +859,16 @@ export default function UploadPage() {
             }
 
             const payload = (await response.json()) as {
-              email: Pick<NormalizedCustomer, "subject" | "emailBody" | "ctaLine">;
+              email: Pick<NormalizedCustomer, "subject" | "headline" | "emailBody" | "ctaLine">;
             };
 
             completed += 1;
             replaceCustomer({
               ...customer,
               ...payload.email,
-              headline: buildEmailHeadline(customer, currentCampaign, customer.matchedOffer),
+              headline:
+                payload.email.headline ||
+                buildEmailHeadline(customer, currentCampaign, customer.matchedOffer),
               generationStatus: "success"
             });
           } catch (error) {

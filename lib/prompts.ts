@@ -4,6 +4,7 @@ import type { NormalizedCustomer } from "@/lib/normalize";
 
 export type GeneratedEmail = {
   subject: string;
+  headline?: string;
   emailBody: string;
   ctaLine?: string;
 };
@@ -132,11 +133,11 @@ function emailTypeInstructions(customer: NormalizedCustomer) {
       "Lead with the matched offer and keep the sales message as the main point of the email.",
       tradeBlock
         ? customer.tradeValue
-          ? `Add a brief trade-in block using the mapped estimate of ${formattedTradeValue}. Keep it secondary to the offer.`
-          : "Add a brief trade-in block, but keep it secondary to the offer."
+          ? `Add a brief trade-in block using soft language like "Your current vehicle may put you in a good position to review options" and use the mapped estimate of ${formattedTradeValue}. Keep it secondary to the offer.`
+          : 'Add a brief trade-in block using soft language like "Your current vehicle may put you in a good position to review options," but keep it secondary to the offer.'
         : "Do not add a trade-in block unless explicitly supported by the customer data.",
       serviceBlock
-        ? "Add a brief service follow-up block, but keep it secondary to the offer."
+        ? 'Add a brief service follow-up block using helpful language like "It may also be a good time to review service if it has been a while," but keep it secondary to the offer.'
         : "Do not add a service block unless explicitly supported by the customer data."
     ].join("\n");
   }
@@ -241,28 +242,49 @@ export function buildEmailPrompt(
 
   return [
     "You write dealership BDC emails that sound like a real BDC rep or sales manager.",
-    "Return strict JSON only with these keys: subject, emailBody, ctaLine.",
+    "Return strict JSON only with these keys: subject, headline, emailBody, ctaLine.",
     "Do not return HTML, markdown, or commentary.",
     "",
     "Voice and tone:",
-    "- Conversational, natural, and slightly informal.",
+    "- Confident but not pushy.",
+    "- Helpful BDC or sales manager tone.",
+    "- Clear, conversational, and natural.",
     "- Friendly and helpful, not corporate and not ad-like.",
-    "- No fluff, buzzwords, hype, or generic marketing language.",
+    "- No jargon, fluff, buzzwords, hype, or generic marketing language.",
+    "- No pressure language, exaggerated claims, or fake urgency.",
     "- No ALL CAPS.",
     `- The requested campaign tone is: ${campaign.aiTone}`,
     "",
     "Structure:",
-    "- emailBody must be 80 to 120 words.",
+    "- emailBody must be 70 to 110 words.",
     "- Use 2 to 4 short paragraphs max.",
     "- Keep the same basic flow: opening, context, CTA.",
     "- End with a simple question.",
     "- Do not repeat the hero headline or email headline wording inside the body.",
+    "- Make headline concise, natural, and distinct from the hero line.",
     "",
     "Safety rules:",
     "- Never invent pricing, APR, rebates, incentives, discounts, or approvals.",
     "- Never use spammy or pushy language.",
     "- If no matched offer exists, do not mention incentives or offer language.",
     "- If a matched offer exists, include exactly one sentence in the body that mentions it clearly.",
+    "- Do not oversell a matched offer.",
+    "- Do not repeat the full disclaimer in the body.",
+    "- Do not invent savings, eligibility, guarantees, or approvals.",
+    "",
+    "Banned words and phrases:",
+    '- Avoid these exact words or phrases unless they appear inside required source data: "honestly", "to be truthful", "contract", "buy", "cheap", "I think", "maybe", "probably", "just checking in", "just wanted", "hopefully", "I want to", "sorry to bother you", "we are the best", "problem", "cost", "price", "sign here", "features", "synergy", "disruptive", "leasing-edge", "limited time", "act now".',
+    "",
+    "Preferred swaps:",
+    '- Use "own", "upgrade", or "get into" instead of "buy".',
+    '- Use "paperwork" or "agreement" instead of "contract".',
+    '- Use "value-driven" or "cost-effective" instead of "cheap".',
+    '- Use "opportunity" or "challenge" instead of "problem".',
+    '- Use "amount", "monthly amount", or "investment" instead of "cost" or "price".',
+    '- Use "benefits" instead of "features".',
+    '- Use "you might find value in" instead of "I want to show you".',
+    '- Use "reaching out with a quick update" instead of "just checking in".',
+    '- Use "may", "could", or "looks like" instead of "maybe" or "probably".',
     "",
     `Campaign name: ${campaign.campaignName}`,
     `Campaign type: ${campaign.campaignType || "General campaign"}`,
@@ -284,8 +306,8 @@ export function buildEmailPrompt(
     "Controlled variation:",
     "- Vary the opening sentence, core message phrasing, and CTA wording across customers.",
     "- Keep the strategy consistent for the assigned email type.",
-    "- Avoid defaulting to 'I just wanted to check in and see how your [vehicle] is treating you.' unless there is a strong reason.",
-    "- Rotate between different natural openings like a quick check-in, a simple follow-up, a short note, a quick question, or a wanted-to-reach-out style sentence.",
+    "- Avoid defaulting to repetitive openings or weak phrasing.",
+    "- Rotate between different natural openings like reaching out with a quick update, a simple follow-up, a short note, or a quick question.",
     "- For no-offer general emails, make the second paragraph meaningfully different from the first instead of repeating the same check-in idea.",
     "- Keep the body conversational, but do not let paragraph one and paragraph two say the same thing in slightly different words.",
     "",
@@ -295,9 +317,16 @@ export function buildEmailPrompt(
     "- Avoid spam words like free, deal, offer, save, urgent, guaranteed, approved, or limited.",
     `- Good examples: "Still driving your ${shortVehicle}?", "Got a minute?", "Quick ${customer.model || "vehicle"} question"`,
     "",
+    "Headline:",
+    "- Keep it short and useful for the content header.",
+    "- Do not copy the subject line exactly.",
+    "- Do not repeat the hero phrasing exactly.",
+    "- Keep it consultative, specific, and natural.",
+    "",
     "CTA line:",
     "- Provide a short response prompt that can also be used in the template button area.",
     "- Examples: \"Would you be open to taking a look?\", \"Do you have a few minutes this week?\", \"Would it make sense to check options?\"",
+    "- Keep it helpful and low-pressure.",
     "",
     "Customer data:",
     `First name: ${customer.firstName || "there"}`,

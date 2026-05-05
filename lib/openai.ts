@@ -56,12 +56,13 @@ function extractOutputText(payload: OpenAITextResponse) {
 function parseGeneratedEmail(text: string): GeneratedEmail {
   const parsed = JSON.parse(text) as Partial<GeneratedEmail>;
 
-  if (!parsed.subject || !parsed.emailBody) {
-    throw new Error("OpenAI response did not include subject and emailBody.");
+  if (!parsed.subject || !parsed.headline || !parsed.emailBody) {
+    throw new Error("OpenAI response did not include subject, headline, and emailBody.");
   }
 
   return {
     subject: String(parsed.subject),
+    headline: String(parsed.headline),
     emailBody: String(parsed.emailBody),
     ctaLine: parsed.ctaLine ? String(parsed.ctaLine) : ""
   };
