@@ -1,5 +1,5 @@
 import type { CampaignConfig, OfferStrategy } from "@/lib/campaign";
-import { inferBodyType, type BodyType } from "@/lib/body-type";
+import { inferBodySize, inferBodyType, type BodyType } from "@/lib/body-type";
 import type { CustomerIntent, NormalizedCustomer } from "@/lib/normalize";
 import { hasServiceTrigger, hasTradeTrigger, type EmailType } from "@/lib/rules";
 
@@ -176,6 +176,35 @@ function pickBestOffer(candidates: NormalizedOffer[], strategy: OfferStrategy) {
   return scoredCandidates[0]?.offer ?? null;
 }
 
+function bodyTypeMatchesWithSize(
+  customer: Pick<NormalizedCustomer, "make" | "model" | "bodyType">,
+  offer: Pick<NormalizedOffer, "make" | "brand" | "model" | "bodyType" | "vehicleTitle" | "vehicleLabel">
+) {
+  const customerBodyType = customer.bodyType ?? inferBodyType(customer.model, customer.make);
+  const offerBodyType = offer.bodyType;
+
+  if (customerBodyType === "Unknown" || offerBodyType === "Unknown") {
+    return false;
+  }
+
+  if (customerBodyType !== offerBodyType) {
+    return false;
+  }
+
+  const customerBodySize = inferBodySize(customer.model, customer.make, customer.bodyType);
+  const offerBodySize = inferBodySize(
+    offer.model,
+    offer.make || offer.brand,
+    offer.vehicleTitle || offer.vehicleLabel
+  );
+
+  if (customerBodySize === "Unknown" || offerBodySize === "Unknown") {
+    return true;
+  }
+
+  return customerBodySize === offerBodySize;
+}
+
 export function matchOfferToCustomer(
   customer: Pick<NormalizedCustomer, "make" | "model" | "bodyType" | "customerIntent">,
   campaign: CampaignConfig,
@@ -211,7 +240,7 @@ export function matchOfferToCustomer(
       return true;
     }
 
-    return offer.bodyType === customerBodyType;
+    return bodyTypeMatchesWithSize(customer, offer);
   });
   const modelMatchFound = exactModelMatches.length > 0;
   const exactModelMatch = pickBestOffer(exactModelMatches, campaign.offerStrategy);
@@ -229,7 +258,7 @@ export function matchOfferToCustomer(
 
   const bodyTypeMatches =
     customerBodyType !== "Unknown"
-      ? intentFilteredOffers.filter((offer) => offer.bodyType === customerBodyType)
+      ? intentFilteredOffers.filter((offer) => bodyTypeMatchesWithSize(customer, offer))
       : [];
   const bodyTypeMatchFound = bodyTypeMatches.length > 0;
   const bodyTypeMatch = pickBestOffer(bodyTypeMatches, campaign.offerStrategy);

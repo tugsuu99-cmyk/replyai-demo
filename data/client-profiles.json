@@ -1,0 +1,25 @@
+[
+  {
+    "clientId": "default-client",
+    "clientName": "Default dealership",
+    "automakerBrand": "",
+    "storeName": "Your Dealership",
+    "logoUrl": "https://dummyimage.com/320x80/0f172a/ffffff&text=Your+Dealership",
+    "primaryColor": "#0f172a",
+    "secondaryColor": "#111827",
+    "accentColor": "#facc15",
+    "website": "https://www.example.com",
+    "phone": "(555) 555-0100",
+    "address": "123 Main Street, Hometown, USA",
+    "senderName": "Alex",
+    "senderTitle": "BDC Manager",
+    "footerText": "You are receiving this because you previously worked with our dealership.",
+    "ctaUrls": {
+      "default": "https://www.example.com",
+      "trade": "https://www.example.com",
+      "service": "https://www.example.com",
+      "lease": "https://www.example.com",
+      "general": "https://www.example.com"
+    }
+  }
+]

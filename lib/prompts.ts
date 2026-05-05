@@ -16,6 +16,18 @@ function shortVehicleLabel(customer: NormalizedCustomer) {
   return [customer.year, customer.model].filter(Boolean).join(" ") || customer.model || "your vehicle";
 }
 
+function matchedOfferVehicleLabel(matchedOffer: NormalizedOffer | null | undefined) {
+  return (
+    matchedOffer?.vehicleTitle ||
+    matchedOffer?.vehicleLabel ||
+    [matchedOffer?.year, matchedOffer?.make || matchedOffer?.brand, matchedOffer?.model]
+      .filter(Boolean)
+      .join(" ") ||
+    matchedOffer?.model ||
+    "the offered vehicle"
+  );
+}
+
 function formatBodyTypeLabel(bodyType?: NormalizedCustomer["bodyType"]) {
   if (!bodyType || bodyType === "Unknown") {
     return "vehicle";
@@ -71,18 +83,20 @@ function offerInstructions(
     `Matched offer headline: ${matchedOffer.headline || "none"}`,
     `Matched offer details: ${matchedOffer.details || "none"}`,
     `Matched offer model: ${matchedOffer.model || "none"}`,
+    `Matched offer vehicle title: ${matchedOfferVehicleLabel(matchedOffer)}`,
     `Matched offer type: ${matchedOffer.offerType}`,
     `Match reason: ${matchReason || "none"}`,
     "You must mention the matched offer in the email body exactly once.",
     "Keep the offer mention to one short sentence max.",
     "The offer mention should feel like a useful heads-up, not an ad.",
+    "Whenever you mention a matched offer or incentive, include the full year, make, and model in that sentence.",
     "Do not quote or invent pricing, APR, rebates, cash back, discounts, or incentives that are not already present in the offer details.",
     "Do not mention the disclaimer in the email body. The template will place the exact source disclaimer at the bottom automatically."
   ];
 
   if (matchReason === "model") {
     instructions.push(
-      "For an exact model match, mention the offered model and one concrete offer detail from the source headline or details.",
+      "For an exact model match, mention the full matched offer year, make, and model plus one concrete offer detail from the source headline or details.",
       "Do not stack multiple numbers or terms in the same email."
     );
   }
@@ -90,7 +104,7 @@ function offerInstructions(
   if (matchReason === "bodyType") {
     instructions.push(
       `This is only a body-type fallback match. Since the customer is driving a ${customer.bodyType || "similar vehicle"}, you may use soft language like "Since you're currently driving a similar ${customer.bodyType || "vehicle"}, this ${matchedOffer.model || "option"} may be worth a look." Do not imply they own the offered model.`,
-      "For a body-type fallback, still mention the offered model plus one concrete offer detail from the source headline if available.",
+      "For a body-type fallback, still mention the full matched offer year, make, and model plus one concrete offer detail from the source headline if available.",
       "Keep it to a single sentence and frame it as an available option, not their vehicle."
     );
   }

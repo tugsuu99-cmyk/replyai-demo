@@ -82,7 +82,7 @@ export function ClientProfileForm({ initialClient, onCancel, onSave }: ClientPro
           <div>
             <h2 className="text-lg font-semibold text-slate-50">Client profile</h2>
             <p className="mt-1 text-sm text-slate-400">
-              Branding, sender details, and CTA URLs are stored locally in this browser.
+              Branding, sender details, and CTA URLs are saved to the app&apos;s shared client profile file.
             </p>
           </div>
           <div className="flex gap-2">

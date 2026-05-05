@@ -2,8 +2,14 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useMemo, useState } from "react";
-import { clientProfileToBrandConfig, loadClientProfiles, type ClientProfile } from "@/lib/client-config";
+import { useEffect, useMemo, useState } from "react";
+import {
+  clientProfileToBrandConfig,
+  defaultClientProfile,
+  fetchSharedClientProfiles,
+  loadClientProfiles,
+  type ClientProfile
+} from "@/lib/client-config";
 import { defaultBrandConfig } from "@/lib/brand-config";
 import { renderBrandedEmailHtml } from "@/lib/email-template";
 import { downloadCsv } from "@/lib/export";
@@ -107,9 +113,21 @@ function reportToClient(report: CampaignReport, profile?: ClientProfile): Client
 export default function DashboardPage() {
   const router = useRouter();
   const [reports, setReports] = useState<CampaignReport[]>(() => loadCampaignReports());
-  const [clientProfiles] = useState<ClientProfile[]>(() => loadClientProfiles());
+  const [clientProfiles, setClientProfiles] = useState<ClientProfile[]>(() => loadClientProfiles());
   const [selectedCampaignId, setSelectedCampaignId] = useState<string>();
   const [selectedEmailId, setSelectedEmailId] = useState<string>();
+
+  useEffect(() => {
+    void fetchSharedClientProfiles()
+      .then((sharedProfiles) => {
+        setClientProfiles(sharedProfiles);
+      })
+      .catch(() => {
+        setClientProfiles((currentProfiles) =>
+          currentProfiles.length > 0 ? currentProfiles : [defaultClientProfile]
+        );
+      });
+  }, []);
 
   const totals = useMemo(() => {
     return reports.reduce(

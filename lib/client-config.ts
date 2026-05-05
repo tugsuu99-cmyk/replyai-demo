@@ -48,6 +48,15 @@ export const defaultClientProfile: ClientProfile = {
   }
 };
 
+function normalizeClientProfile(profile: Partial<ClientProfile>) {
+  return createClientProfile(profile);
+}
+
+function normalizeClientProfiles(profiles: ClientProfile[]) {
+  const normalizedProfiles = profiles.length > 0 ? profiles : [defaultClientProfile];
+  return normalizedProfiles.map((profile) => normalizeClientProfile(profile));
+}
+
 function createId() {
   if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
     return crypto.randomUUID();
@@ -146,16 +155,17 @@ export function loadClientProfiles() {
 
   try {
     const parsed = JSON.parse(storedValue) as ClientProfile[];
-    const profiles = parsed.length > 0 ? parsed : [defaultClientProfile];
-
-    return profiles.map((profile) => createClientProfile(profile));
+    return normalizeClientProfiles(parsed);
   } catch {
     return [defaultClientProfile];
   }
 }
 
 export function saveClientProfiles(profiles: ClientProfile[]) {
-  window.localStorage.setItem(CLIENT_PROFILES_STORAGE_KEY, JSON.stringify(profiles));
+  window.localStorage.setItem(
+    CLIENT_PROFILES_STORAGE_KEY,
+    JSON.stringify(normalizeClientProfiles(profiles))
+  );
 }
 
 export function loadSelectedClientId(profiles: ClientProfile[]) {
@@ -171,4 +181,45 @@ export function loadSelectedClientId(profiles: ClientProfile[]) {
 
 export function saveSelectedClientId(clientId: string) {
   window.localStorage.setItem(SELECTED_CLIENT_STORAGE_KEY, clientId);
+}
+
+export async function fetchSharedClientProfiles() {
+  const response = await fetch("/api/client-profiles", {
+    method: "GET",
+    cache: "no-store"
+  });
+
+  if (!response.ok) {
+    throw new Error("Could not load shared client profiles.");
+  }
+
+  const payload = (await response.json()) as {
+    profiles?: ClientProfile[];
+  };
+
+  const profiles = normalizeClientProfiles(payload.profiles ?? [defaultClientProfile]);
+  saveClientProfiles(profiles);
+
+  return profiles;
+}
+
+export async function persistSharedClientProfiles(profiles: ClientProfile[]) {
+  const normalizedProfiles = normalizeClientProfiles(profiles);
+  const response = await fetch("/api/client-profiles", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({
+      profiles: normalizedProfiles
+    })
+  });
+
+  if (!response.ok) {
+    throw new Error("Could not save shared client profiles.");
+  }
+
+  saveClientProfiles(normalizedProfiles);
+
+  return normalizedProfiles;
 }

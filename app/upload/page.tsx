@@ -22,9 +22,10 @@ import {
   clientProfileToBrandConfig,
   createBlankClientProfile,
   defaultClientProfile,
+  fetchSharedClientProfiles,
   loadClientProfiles,
   loadSelectedClientId,
-  saveClientProfiles,
+  persistSharedClientProfiles,
   saveSelectedClientId,
   type ClientProfile
 } from "@/lib/client-config";
@@ -265,6 +266,15 @@ export default function UploadPage() {
       setClients(storedClients);
       setSelectedClientId(loadSelectedClientId(storedClients));
       setHeroOverrides(loadHeroOverrides());
+
+      void fetchSharedClientProfiles()
+        .then((sharedClients) => {
+          setClients(sharedClients);
+          setSelectedClientId(loadSelectedClientId(sharedClients));
+        })
+        .catch(() => {
+          // Keep the local cache as a fallback when the shared file is unavailable.
+        });
     }, 0);
 
     return () => window.clearTimeout(hydrationTimer);
@@ -706,7 +716,7 @@ export default function UploadPage() {
     }
   }
 
-  function saveClient(client: ClientProfile) {
+  async function saveClient(client: ClientProfile) {
     const nextClients = clients.some((currentClient) => currentClient.clientId === client.clientId)
       ? clients.map((currentClient) => (currentClient.clientId === client.clientId ? client : currentClient))
       : [...clients, client];
@@ -716,12 +726,12 @@ export default function UploadPage() {
     setEditingClient(undefined);
 
     if (!privateMode) {
-      saveClientProfiles(nextClients);
+      await persistSharedClientProfiles(nextClients);
       saveSelectedClientId(client.clientId);
     }
   }
 
-  function deleteClient(clientId: string) {
+  async function deleteClient(clientId: string) {
     if (clients.length <= 1) {
       return;
     }
@@ -736,7 +746,7 @@ export default function UploadPage() {
     setSelectedClientId(nextSelectedClientId);
 
     if (!privateMode) {
-      saveClientProfiles(nextClients);
+      await persistSharedClientProfiles(nextClients);
       saveSelectedClientId(nextSelectedClientId);
     }
   }

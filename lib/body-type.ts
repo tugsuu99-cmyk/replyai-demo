@@ -1,6 +1,8 @@
 export const BODY_TYPES = ["SUV", "Truck", "Sedan", "Van", "EV", "Unknown"] as const;
+export const BODY_SIZES = ["Small", "Midsize", "Large", "Unknown"] as const;
 
 export type BodyType = (typeof BODY_TYPES)[number];
+export type BodySize = (typeof BODY_SIZES)[number];
 
 const MODEL_BODY_TYPE_LOOKUP: Record<string, BodyType> = {
   gv60: "SUV",
@@ -98,6 +100,107 @@ const MODEL_PREFIX_BODY_TYPE_RULES: Array<{
   { pattern: /^q\d+/i, bodyType: "Sedan" }
 ];
 
+const MODEL_BODY_SIZE_LOOKUP: Record<string, BodySize> = {
+  gv60: "Small",
+  gv70: "Midsize",
+  gv80: "Large",
+  g70: "Small",
+  g80: "Midsize",
+  g90: "Large",
+  qx50: "Small",
+  qx55: "Small",
+  qx60: "Midsize",
+  qx80: "Large",
+  q50: "Midsize",
+  q60: "Midsize",
+  kona: "Small",
+  tucson: "Small",
+  "santa fe": "Midsize",
+  palisade: "Large",
+  venue: "Small",
+  "ioniq 5": "Midsize",
+  "ioniq 6": "Midsize",
+  elantra: "Midsize",
+  accent: "Small",
+  terrain: "Small",
+  acadia: "Midsize",
+  yukon: "Large",
+  canyon: "Midsize",
+  "hummer ev": "Large",
+  rogue: "Small",
+  pathfinder: "Midsize",
+  murano: "Midsize",
+  armada: "Large",
+  kicks: "Small",
+  equinox: "Small",
+  traverse: "Large",
+  tahoe: "Large",
+  suburban: "Large",
+  explorer: "Midsize",
+  expedition: "Large",
+  bronco: "Midsize",
+  wrangler: "Midsize",
+  escape: "Small",
+  edge: "Midsize",
+  outlander: "Midsize",
+  rav4: "Small",
+  highlander: "Midsize",
+  pilot: "Midsize",
+  "cr-v": "Small",
+  crv: "Small",
+  "rogue sport": "Small",
+  frontier: "Midsize",
+  titan: "Large",
+  colorado: "Midsize",
+  silverado: "Large",
+  sierra: "Large",
+  ranger: "Midsize",
+  f150: "Large",
+  "f-150": "Large",
+  maverick: "Small",
+  tacoma: "Midsize",
+  tundra: "Large",
+  gladiator: "Large",
+  accord: "Large",
+  altima: "Midsize",
+  sentra: "Small",
+  maxima: "Large",
+  camry: "Midsize",
+  corolla: "Small",
+  malibu: "Large",
+  fusion: "Midsize",
+  civic: "Small",
+  sonata: "Large",
+  odyssey: "Large",
+  sienna: "Large",
+  pacifica: "Large",
+  transit: "Large",
+  sprinter: "Large",
+  leaf: "Small",
+  ariya: "Midsize",
+  bolt: "Small",
+  "blazer ev": "Midsize",
+  "mach-e": "Midsize",
+  lightning: "Large",
+  "model 3": "Midsize",
+  "model y": "Midsize"
+};
+
+const MODEL_PREFIX_BODY_SIZE_RULES: Array<{
+  pattern: RegExp;
+  bodySize: BodySize;
+}> = [
+  { pattern: /^gv6\d*/i, bodySize: "Small" },
+  { pattern: /^gv7\d*/i, bodySize: "Midsize" },
+  { pattern: /^gv8\d*/i, bodySize: "Large" },
+  { pattern: /^g7\d*/i, bodySize: "Small" },
+  { pattern: /^g8\d*/i, bodySize: "Midsize" },
+  { pattern: /^g9\d*/i, bodySize: "Large" },
+  { pattern: /^qx5\d*/i, bodySize: "Small" },
+  { pattern: /^qx6\d*/i, bodySize: "Midsize" },
+  { pattern: /^qx8\d*/i, bodySize: "Large" }
+];
+
 function compact(value: string) {
   return value.toLowerCase().replace(/[^a-z0-9]/g, "");
 }
@@ -140,6 +243,28 @@ export function normalizeBodyType(value?: string): BodyType {
   return "Unknown";
 }
 
+export function normalizeBodySize(value?: string): BodySize {
+  const cleaned = cleanBodyText(value);
+
+  if (!cleaned) {
+    return "Unknown";
+  }
+
+  if (cleaned.includes("compact") || cleaned.includes("small") || cleaned.includes("subcompact")) {
+    return "Small";
+  }
+
+  if (cleaned.includes("midsize") || cleaned.includes("mid-size") || cleaned.includes("mid size")) {
+    return "Midsize";
+  }
+
+  if (cleaned.includes("large") || cleaned.includes("full-size") || cleaned.includes("full size")) {
+    return "Large";
+  }
+
+  return "Unknown";
+}
+
 export function inferBodyType(model?: string, make?: string, explicitBodyType?: string): BodyType {
   const normalizedExplicit = normalizeBodyType(explicitBodyType);
 
@@ -173,6 +298,45 @@ export function inferBodyType(model?: string, make?: string, explicitBodyType?: 
   for (const rule of MODEL_PREFIX_BODY_TYPE_RULES) {
     if (rule.pattern.test(normalizedModel)) {
       return rule.bodyType;
+    }
+  }
+
+  return "Unknown";
+}
+
+export function inferBodySize(model?: string, make?: string, explicitBodyType?: string): BodySize {
+  const normalizedExplicit = normalizeBodySize(explicitBodyType);
+
+  if (normalizedExplicit !== "Unknown") {
+    return normalizedExplicit;
+  }
+
+  const lookupKey = [make, model]
+    .filter(Boolean)
+    .join(" ")
+    .trim()
+    .toLowerCase();
+  const compactLookupKey = compact(lookupKey);
+
+  for (const [candidate, bodySize] of Object.entries(MODEL_BODY_SIZE_LOOKUP)) {
+    if (compact(candidate) === compactLookupKey || compactLookupKey.endsWith(compact(candidate))) {
+      return bodySize;
+    }
+  }
+
+  const fallbackModelKey = compact(model ?? "");
+
+  for (const [candidate, bodySize] of Object.entries(MODEL_BODY_SIZE_LOOKUP)) {
+    if (compact(candidate) === fallbackModelKey) {
+      return bodySize;
+    }
+  }
+
+  const normalizedModel = (model ?? "").trim().toLowerCase();
+
+  for (const rule of MODEL_PREFIX_BODY_SIZE_RULES) {
+    if (rule.pattern.test(normalizedModel)) {
+      return rule.bodySize;
     }
   }
 
