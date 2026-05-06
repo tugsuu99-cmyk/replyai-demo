@@ -277,7 +277,7 @@ function pickBestBodyTypeFallbackOffer(
 }
 
 export function matchOfferToCustomer(
-  customer: Pick<NormalizedCustomer, "make" | "model" | "bodyType" | "customerIntent">,
+  customer: Pick<NormalizedCustomer, "make" | "model" | "bodyType" | "customerIntent" | "mileage">,
   campaign: CampaignConfig,
   offers: NormalizedOffer[]
 ) {
@@ -364,6 +364,27 @@ export function matchOfferToCustomer(
       offersAfterIntentFilterCount: intentFilteredOffers.length,
       modelMatchFound,
       bodyTypeMatchFound: looseBodyTypeMatchFound
+    };
+  }
+
+  const tradeUpgradeFallbackOffers =
+    usesSalesOfferFramework(campaign.campaignType) && hasTradeTrigger(customer) && customerBodyType !== "Unknown"
+      ? activeOffers.filter((offer) => bodyTypeMatchesIgnoringSize(customer, offer))
+      : [];
+  const tradeUpgradeFallbackMatch = pickBestBodyTypeFallbackOffer(
+    customer,
+    tradeUpgradeFallbackOffers,
+    campaign.offerStrategy
+  );
+
+  if (tradeUpgradeFallbackMatch) {
+    return {
+      offer: tradeUpgradeFallbackMatch,
+      reason: "bodyType" as const,
+      allowedOfferTypes,
+      offersAfterIntentFilterCount: intentFilteredOffers.length,
+      modelMatchFound,
+      bodyTypeMatchFound: true
     };
   }
 
