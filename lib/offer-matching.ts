@@ -205,6 +205,77 @@ function bodyTypeMatchesWithSize(
   return customerBodySize === offerBodySize;
 }
 
+function bodyTypeMatchesIgnoringSize(
+  customer: Pick<NormalizedCustomer, "make" | "model" | "bodyType">,
+  offer: Pick<NormalizedOffer, "bodyType">
+) {
+  const customerBodyType = customer.bodyType ?? inferBodyType(customer.model, customer.make);
+  const offerBodyType = offer.bodyType;
+
+  if (customerBodyType === "Unknown" || offerBodyType === "Unknown") {
+    return false;
+  }
+
+  return customerBodyType === offerBodyType;
+}
+
+function bodySizeOrder(size: ReturnType<typeof inferBodySize>) {
+  switch (size) {
+    case "Small":
+      return 0;
+    case "Midsize":
+      return 1;
+    case "Large":
+      return 2;
+    default:
+      return Number.POSITIVE_INFINITY;
+  }
+}
+
+function bodySizeDistance(
+  customer: Pick<NormalizedCustomer, "make" | "model" | "bodyType">,
+  offer: Pick<NormalizedOffer, "make" | "brand" | "model" | "bodyType" | "vehicleTitle" | "vehicleLabel">
+) {
+  const customerBodySize = inferBodySize(customer.model, customer.make, customer.bodyType);
+  const offerBodySize = inferBodySize(
+    offer.model,
+    offer.make || offer.brand,
+    offer.vehicleTitle || offer.vehicleLabel
+  );
+
+  if (customerBodySize === "Unknown" || offerBodySize === "Unknown") {
+    return Number.POSITIVE_INFINITY;
+  }
+
+  return Math.abs(bodySizeOrder(customerBodySize) - bodySizeOrder(offerBodySize));
+}
+
+function pickBestBodyTypeFallbackOffer(
+  customer: Pick<NormalizedCustomer, "make" | "model" | "bodyType">,
+  candidates: NormalizedOffer[],
+  strategy: OfferStrategy
+) {
+  if (candidates.length === 0) {
+    return null;
+  }
+
+  const scoredCandidates = candidates
+    .map((offer, index) => ({
+      offer,
+      index,
+      sizeDistance: bodySizeDistance(customer, offer),
+      strategyScore: strategyMatchesOffer(strategy, offer) ? 1 : 0
+    }))
+    .sort(
+      (left, right) =>
+        left.sizeDistance - right.sizeDistance ||
+        right.strategyScore - left.strategyScore ||
+        left.index - right.index
+    );
+
+  return scoredCandidates[0]?.offer ?? null;
+}
+
 export function matchOfferToCustomer(
   customer: Pick<NormalizedCustomer, "make" | "model" | "bodyType" | "customerIntent">,
   campaign: CampaignConfig,
@@ -240,7 +311,7 @@ export function matchOfferToCustomer(
       return true;
     }
 
-    return bodyTypeMatchesWithSize(customer, offer);
+    return customerBodyType === offer.bodyType;
   });
   const modelMatchFound = exactModelMatches.length > 0;
   const exactModelMatch = pickBestOffer(exactModelMatches, campaign.offerStrategy);
@@ -274,13 +345,35 @@ export function matchOfferToCustomer(
     };
   }
 
+  const looseBodyTypeMatches =
+    customerBodyType !== "Unknown"
+      ? intentFilteredOffers.filter((offer) => bodyTypeMatchesIgnoringSize(customer, offer))
+      : [];
+  const looseBodyTypeMatchFound = looseBodyTypeMatches.length > 0;
+  const looseBodyTypeMatch = pickBestBodyTypeFallbackOffer(
+    customer,
+    looseBodyTypeMatches,
+    campaign.offerStrategy
+  );
+
+  if (looseBodyTypeMatch) {
+    return {
+      offer: looseBodyTypeMatch,
+      reason: "bodyType" as const,
+      allowedOfferTypes,
+      offersAfterIntentFilterCount: intentFilteredOffers.length,
+      modelMatchFound,
+      bodyTypeMatchFound: looseBodyTypeMatchFound
+    };
+  }
+
   return {
     offer: null,
     reason: "none" as const,
     allowedOfferTypes,
     offersAfterIntentFilterCount: intentFilteredOffers.length,
     modelMatchFound,
-    bodyTypeMatchFound
+    bodyTypeMatchFound: bodyTypeMatchFound || looseBodyTypeMatchFound
   };
 }
 

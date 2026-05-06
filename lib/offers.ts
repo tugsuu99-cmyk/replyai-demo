@@ -495,6 +495,73 @@ function sanitizeOfferHeadline(headline: string, vehicleTitle?: string) {
   return cleanOfferHeadline(removeVehicleTitleFromText(headline, vehicleTitle));
 }
 
+function normalizeOfferModelFamily(model?: string, make?: string) {
+  const normalizedMake = cleanText(make).toLowerCase();
+  const normalizedModel = dedupeRepeatedYear(cleanText(model))
+    .toLowerCase()
+    .replace(/\b(new|used|certified|cpo)\b/g, " ")
+    .replace(/\b20\d{2}\b/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  const withoutMake =
+    normalizedMake && normalizedModel.startsWith(`${normalizedMake} `)
+      ? normalizedModel.slice(normalizedMake.length).trim()
+      : normalizedModel;
+
+  const tokens = withoutMake.split(" ").filter(Boolean);
+
+  while (tokens.length > 1 && looksLikeTrimFragment(tokens[tokens.length - 1] ?? "")) {
+    tokens.pop();
+  }
+
+  return tokens.join(" ").trim();
+}
+
+function hydrateOfferMedia(offers: NormalizedOffer[]) {
+  const mediaByModelFamily = new Map<
+    string,
+    Pick<NormalizedOffer, "imageUrl" | "heroImageFit" | "ctaUrl">
+  >();
+
+  for (const offer of offers) {
+    const modelFamily = normalizeOfferModelFamily(offer.model, offer.make || offer.brand);
+    const mediaKey = [cleanText(offer.make || offer.brand).toLowerCase(), modelFamily]
+      .filter(Boolean)
+      .join("|");
+
+    if (!mediaKey) {
+      continue;
+    }
+
+    const existing = mediaByModelFamily.get(mediaKey);
+    mediaByModelFamily.set(mediaKey, {
+      imageUrl: existing?.imageUrl || offer.imageUrl,
+      heroImageFit: existing?.heroImageFit || offer.heroImageFit,
+      ctaUrl: existing?.ctaUrl || offer.ctaUrl
+    });
+  }
+
+  return offers.map((offer) => {
+    const modelFamily = normalizeOfferModelFamily(offer.model, offer.make || offer.brand);
+    const mediaKey = [cleanText(offer.make || offer.brand).toLowerCase(), modelFamily]
+      .filter(Boolean)
+      .join("|");
+    const fallbackMedia = mediaKey ? mediaByModelFamily.get(mediaKey) : undefined;
+
+    if (!fallbackMedia) {
+      return offer;
+    }
+
+    return {
+      ...offer,
+      imageUrl: offer.imageUrl || fallbackMedia.imageUrl,
+      heroImageFit: offer.imageUrl ? offer.heroImageFit : fallbackMedia.heroImageFit,
+      ctaUrl: offer.ctaUrl || fallbackMedia.ctaUrl
+    };
+  });
+}
+
 function buildOfferFromTextChunk(
   chunk: string,
   row: Record<string, unknown>,
@@ -955,12 +1022,12 @@ export async function parseOffersByType(
   const sourceType = detectOfferSourceType(fileName, mimeType);
 
   if (sourceType === "docx") {
-    return parseOfferDocxInput(buffer);
+    return hydrateOfferMedia(await parseOfferDocxInput(buffer));
   }
 
   if (sourceType === "xlsx") {
-    return parseOfferWorkbookInput(buffer);
+    return hydrateOfferMedia(parseOfferWorkbookInput(buffer));
   }
 
-  return parseOfferCsv(Buffer.from(buffer).toString("utf8"));
+  return hydrateOfferMedia(parseOfferCsv(Buffer.from(buffer).toString("utf8")));
 }
