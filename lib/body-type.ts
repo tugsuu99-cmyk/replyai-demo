@@ -280,7 +280,13 @@ export function inferBodyType(model?: string, make?: string, explicitBodyType?: 
   const compactLookupKey = compact(lookupKey);
 
   for (const [candidate, bodyType] of Object.entries(MODEL_BODY_TYPE_LOOKUP)) {
-    if (compact(candidate) === compactLookupKey || compactLookupKey.endsWith(compact(candidate))) {
+    const compactCandidate = compact(candidate);
+
+    if (
+      compactCandidate === compactLookupKey ||
+      compactLookupKey.endsWith(compactCandidate) ||
+      compactLookupKey.includes(compactCandidate)
+    ) {
       return bodyType;
     }
   }
@@ -288,7 +294,13 @@ export function inferBodyType(model?: string, make?: string, explicitBodyType?: 
   const fallbackModelKey = compact(model ?? "");
 
   for (const [candidate, bodyType] of Object.entries(MODEL_BODY_TYPE_LOOKUP)) {
-    if (compact(candidate) === fallbackModelKey) {
+    const compactCandidate = compact(candidate);
+
+    if (
+      compactCandidate === fallbackModelKey ||
+      fallbackModelKey.endsWith(compactCandidate) ||
+      fallbackModelKey.includes(compactCandidate)
+    ) {
       return bodyType;
     }
   }
@@ -319,7 +331,13 @@ export function inferBodySize(model?: string, make?: string, explicitBodyType?: 
   const compactLookupKey = compact(lookupKey);
 
   for (const [candidate, bodySize] of Object.entries(MODEL_BODY_SIZE_LOOKUP)) {
-    if (compact(candidate) === compactLookupKey || compactLookupKey.endsWith(compact(candidate))) {
+    const compactCandidate = compact(candidate);
+
+    if (
+      compactCandidate === compactLookupKey ||
+      compactLookupKey.endsWith(compactCandidate) ||
+      compactLookupKey.includes(compactCandidate)
+    ) {
       return bodySize;
     }
   }
@@ -327,7 +345,13 @@ export function inferBodySize(model?: string, make?: string, explicitBodyType?: 
   const fallbackModelKey = compact(model ?? "");
 
   for (const [candidate, bodySize] of Object.entries(MODEL_BODY_SIZE_LOOKUP)) {
-    if (compact(candidate) === fallbackModelKey) {
+    const compactCandidate = compact(candidate);
+
+    if (
+      compactCandidate === fallbackModelKey ||
+      fallbackModelKey.endsWith(compactCandidate) ||
+      fallbackModelKey.includes(compactCandidate)
+    ) {
       return bodySize;
     }
   }
